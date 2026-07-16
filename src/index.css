@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Poppins', sans-serif;
+  }
+
+  /* Dark mode — default */
+  .dark body {
+    background: radial-gradient(ellipse at 50% 20%, #6858a2 0%, #3d2b7a 40%, #1a0e3d 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    color: #ffffff;
+  }
+
+  /* Light mode */
+  body {
+    background: radial-gradient(ellipse at 50% 20%, #e9e4ff 0%, #d6ceff 40%, #f3f0ff 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    color: #1a0e3d;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-white/10 backdrop-blur-sm;
+  }
+
+  .dark .card {
+    @apply bg-white/5;
+  }
+
+  .card {
+    @apply bg-white/60;
+  }
+
+  .tab-btn {
+    @apply px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap;
+  }
+
+  .tab-btn.active {
+    @apply bg-brand-600 text-white shadow-lg shadow-brand-900/40;
+  }
+
+  .dark .tab-btn:not(.active) {
+    @apply text-white/60 hover:text-white hover:bg-white/10;
+  }
+
+  .tab-btn:not(.active) {
+    @apply text-brand-800 hover:text-brand-900 hover:bg-brand-100;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(104, 88, 162, 0.3);
+    border-radius: 3px;
+  }
+
+  /* Input styling */
+  .filter-input {
+    @apply rounded-lg px-3 py-2 text-sm border outline-none transition-colors;
+  }
+
+  .dark .filter-input {
+    @apply bg-white/10 border-white/20 text-white placeholder-white/40
+           focus:border-accent focus:bg-white/15;
+  }
+
+  .filter-input {
+    @apply bg-white/80 border-brand-300 text-brand-900 placeholder-brand-400
+           focus:border-brand-600 focus:bg-white;
+  }
+}
+
+/* Recharts custom styles */
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}
