@@ -1,4 +1,7 @@
-import { parseISO, isWithinInterval, startOfDay, endOfDay, getWeek, getYear, differenceInCalendarDays } from 'date-fns'
+import {
+  parseISO, isWithinInterval, startOfDay, endOfDay, getWeek, getYear, differenceInCalendarDays,
+  startOfMonth, endOfMonth, startOfWeek, endOfWeek, addWeeks, isAfter, format,
+} from 'date-fns'
 import { SEQUENTIAL_STOPS } from '../utils/chartColors'
 
 // ─── Filtering ──────────────────────────────────────────────────────────────
@@ -143,23 +146,19 @@ export function calcOverallKPIs(timeLogRows, capacityRows) {
   return { totalLogged, totalCapacity, utilization }
 }
 
-export function calcUtilizationByTeam(timeLogRows, capacityRows) {
-  const loggedByTeam   = groupBy(timeLogRows, 'TEAM')
+// Weekly Report's team-level utilization (Top N / Bottom N / full "Utilization
+// by Team" charts) is computed directly from the Capacity sheet's own Logged
+// (hrs) and Available (hrs) columns — grouped by Team — rather than deriving
+// "logged" from a separate Raw Time Log sum, so it stays reconciled with the
+// per-employee capacity rows the sheet already aggregates per day.
+export function calcUtilizationByTeam(capacityRows) {
   const capacityByTeam = groupBy(capacityRows, 'Team')
 
-  const teams = [...new Set([
-    ...Object.keys(loggedByTeam),
-    ...Object.keys(capacityByTeam),
-  ])]
-
-  return teams.map(team => {
-    const logged   = round2(sumHours(loggedByTeam[team] || []))
-    const capacity = round2(
-      (capacityByTeam[team] || []).reduce(
-        (s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0
-      )
-    )
-    const utilPct = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+  return Object.keys(capacityByTeam).map(team => {
+    const rows     = capacityByTeam[team]
+    const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
+    const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+    const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
     return { team, logged, capacity, utilPct }
   }).filter(t => !(t.logged === 0 && t.capacity === 0))
     .sort((a, b) => b.utilPct - a.utilPct)
@@ -186,6 +185,108 @@ export function calcUtilizationByEmployee(timeLogRows, capacityRows) {
     return { name, team, logged, capacity, utilPct }
   }).filter(e => !(e.logged === 0 && e.capacity === 0))
     .sort((a, b) => b.utilPct - a.utilPct)
+}
+
+// Distinct "YYYY-MM" months present in a Capacity-sheet-shaped rows array
+// (Date column), newest first — powers the Weekly Trend chart's independent
+// Month dropdown.
+export function getAvailableCapacityMonths(capacityRows) {
+  return [...new Set(capacityRows.map(r => (r.Date || '').slice(0, 7)).filter(Boolean))]
+    .sort()
+    .reverse()
+}
+
+// Company-wide (all employees, all teams) weekly utilization trend for a
+// single calendar month — entirely independent of the tab's date/team/
+// employee filters, per its own Month dropdown. Weeks run Sunday-Saturday;
+// a week straddling the month boundary is clipped to just the days that
+// actually fall inside the selected month (a standard partial week), so the
+// hours/capacity summed for "Week 1" or the last week never leak into the
+// neighboring month.
+export function calcWeeklyUtilizationTrend(capacityRows, year, month) {
+  const monthStart = startOfMonth(new Date(year, month - 1, 1))
+  const monthEnd    = endOfMonth(monthStart)
+
+  const weekRanges = []
+  let cursor = startOfWeek(monthStart, { weekStartsOn: 0 })
+  while (!isAfter(cursor, monthEnd)) {
+    const weekEnd     = endOfWeek(cursor, { weekStartsOn: 0 })
+    const rangeStart  = cursor    < monthStart ? monthStart : cursor
+    const rangeEnd    = weekEnd   > monthEnd   ? monthEnd   : weekEnd
+    weekRanges.push({ rangeStart, rangeEnd })
+    cursor = addWeeks(cursor, 1)
+  }
+
+  return weekRanges.map(({ rangeStart, rangeEnd }, i) => {
+    const rows = capacityRows.filter(r => {
+      if (!r.Date) return false
+      const d = parseISO(r.Date)
+      return d >= rangeStart && d <= rangeEnd
+    })
+    const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
+    const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+    const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+    // rangeStart/rangeEnd (as "YYYY-MM-DD" strings, matching the Date column
+    // format) are carried along so a click on this week's bar/point can
+    // re-derive the exact same row subset for a drill-down, without
+    // duplicating the week-boundary math above.
+    return {
+      week: `Week ${i + 1}`,
+      rangeStart: format(rangeStart, 'yyyy-MM-dd'),
+      rangeEnd: format(rangeEnd, 'yyyy-MM-dd'),
+      logged, capacity, utilPct,
+    }
+  })
+}
+
+// ─── Year-to-Date Utilization widget (Weekly Report) ──────────────────────────
+// Company-wide (all employees, all teams) — Jan 1 of the cutoff date's year
+// through the cutoff date itself. `capacityRows` is expected to be the raw
+// Capacity sheet rows (already passed through applyCapacityTestOverrides at
+// fetch time in sheetsApi.js), so the Nada Alarjani / Sara Ali / menna
+// shaqran corrections are already baked into every row's Logged/Available
+// figures by the time they reach here — no separate override step needed.
+
+function sumLoggedCapacity(rows) {
+  const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
+  const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+  const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+  return { logged, capacity, utilPct }
+}
+
+export function calcYTDUtilization(capacityRows, cutoffDate) {
+  const yearStart = `${cutoffDate.slice(0, 4)}-01-01`
+  const rows = capacityRows.filter(r => r.Date && r.Date >= yearStart && r.Date <= cutoffDate)
+  return { ...sumLoggedCapacity(rows), startDate: yearStart, endDate: cutoffDate }
+}
+
+// One entry per calendar month from January through the cutoff date's month
+// — full-month totals except the cutoff's own month, which is clipped to
+// only the days that have actually elapsed (a standard partial month).
+export function calcYTDMonthlyTrend(capacityRows, cutoffDate) {
+  const year     = Number(cutoffDate.slice(0, 4))
+  const endMonth = Number(cutoffDate.slice(5, 7))
+
+  const months = []
+  for (let m = 1; m <= endMonth; m++) {
+    const rangeStart = `${year}-${String(m).padStart(2, '0')}-01`
+    const rangeEnd = m === endMonth
+      ? cutoffDate
+      : format(endOfMonth(new Date(year, m - 1, 1)), 'yyyy-MM-dd')
+    months.push({ m, rangeStart, rangeEnd })
+  }
+
+  return months.map(({ m, rangeStart, rangeEnd }) => {
+    const rows = capacityRows.filter(r => r.Date && r.Date >= rangeStart && r.Date <= rangeEnd)
+    // rangeStart/rangeEnd/monthLabel let a click on this month's bar re-derive
+    // the exact row subset and a human-readable title for a drill-down modal.
+    return {
+      month: format(new Date(year, m - 1, 1), 'MMM'),
+      monthLabel: format(new Date(year, m - 1, 1), 'MMMM yyyy'),
+      rangeStart, rangeEnd,
+      ...sumLoggedCapacity(rows),
+    }
+  })
 }
 
 // ─── Billable vs Non-Billable vs Exchange ────────────────────────────────────
@@ -326,6 +427,35 @@ export function calcPivotTable(rows, rowKey, colKey) {
   })).sort((a, b) => b.total - a.total)
 
   return { data, cols }
+}
+
+// ─── Team Utilization per Day (Weekly Report heatmap) ─────────────────────────
+// For each weekday (Sun-Sat) x Team, sums every matching Capacity row's
+// Logged/Available (hrs) across the whole filtered date range and derives a
+// single utilization % per cell — so "Monday" reflects every Monday inside
+// the selected period, not just the most recent one. A team/day cell with
+// zero Available hrs across the whole range (i.e. that team never had
+// capacity scheduled on that weekday within the filter) is flagged isOffDay
+// so the UI can show "Off Day" instead of a misleading 0%.
+const DAY_OF_WEEK_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export function calcTeamUtilizationByDayOfWeek(capacityRows) {
+  const teams = getUniqueCapacityTeams(capacityRows)
+
+  const matrix = DAY_OF_WEEK_LABELS.map((day, dowIndex) => {
+    const dayRows = capacityRows.filter(r => r.Date && parseISO(r.Date).getDay() === dowIndex)
+    const cells = teams.map(team => {
+      const rows     = dayRows.filter(r => r.Team === team)
+      const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
+      const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+      const isOffDay = capacity === 0
+      const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+      return { team, logged, capacity, utilPct, isOffDay }
+    })
+    return { day, cells }
+  })
+
+  return { teams, matrix }
 }
 
 // ─── Utilization color coding ─────────────────────────────────────────────────

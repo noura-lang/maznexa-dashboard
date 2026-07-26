@@ -85,19 +85,24 @@ export default function HoursTab() {
             <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
               Hours by Client (Top 20)
             </h3>
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={byClient.slice(0, 20)} layout="vertical" margin={{ left: 8, right: 40 }}>
-                <XAxis type="number" tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <YAxis type="category" dataKey="client" width={140} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="hours" radius={[0, 6, 6, 0]}>
-                  {byClient.slice(0, 20).map((_, i) => (
-                    <Cell key={i} fill={sequentialColor(i, Math.min(byClient.length, 20))} />
-                  ))}
-                  <LabelList dataKey="hours" position="right" formatter={v => v.toLocaleString()} style={labelStyle} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: Math.max(700, Math.min(byClient.length, 20) * 60) }}>
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart data={byClient.slice(0, 20)} margin={{ top: 24, bottom: 90 }}>
+                    <XAxis dataKey="client" tick={{ fill: 'currentColor', fontSize: 11 }}
+                      angle={-35} textAnchor="end" interval={0} />
+                    <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="hours" radius={[6, 6, 0, 0]}>
+                      {byClient.slice(0, 20).map((_, i) => (
+                        <Cell key={i} fill={sequentialColor(i, Math.min(byClient.length, 20))} />
+                      ))}
+                      <LabelList dataKey="hours" position="top" formatter={v => v.toLocaleString()} style={labelStyle} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
 
           <div className="card p-5">
@@ -140,19 +145,24 @@ export default function HoursTab() {
             <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
               Hours by Project (Top 20)
             </h3>
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart data={byProject.slice(0, 20)} layout="vertical" margin={{ left: 8, right: 40 }}>
-                <XAxis type="number" tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <YAxis type="category" dataKey="project" width={160} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="hours" radius={[0, 6, 6, 0]}>
-                  {byProject.slice(0, 20).map((_, i) => (
-                    <Cell key={i} fill={sequentialColor(i, Math.min(byProject.length, 20))} />
-                  ))}
-                  <LabelList dataKey="hours" position="right" formatter={v => v.toLocaleString()} style={labelStyle} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: Math.max(700, Math.min(byProject.length, 20) * 60) }}>
+                <ResponsiveContainer width="100%" height={360}>
+                  <BarChart data={byProject.slice(0, 20)} margin={{ top: 24, bottom: 90 }}>
+                    <XAxis dataKey="project" tick={{ fill: 'currentColor', fontSize: 11 }}
+                      angle={-35} textAnchor="end" interval={0} />
+                    <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar dataKey="hours" radius={[6, 6, 0, 0]}>
+                      {byProject.slice(0, 20).map((_, i) => (
+                        <Cell key={i} fill={sequentialColor(i, Math.min(byProject.length, 20))} />
+                      ))}
+                      <LabelList dataKey="hours" position="top" formatter={v => v.toLocaleString()} style={labelStyle} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
 
           <div className="card p-5">

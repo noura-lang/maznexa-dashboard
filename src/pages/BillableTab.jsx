@@ -7,6 +7,7 @@ import {
 } from '../api/transformData'
 import MultiSelect from '../components/common/MultiSelect'
 import KPICard from '../components/common/KPICard'
+import KPIRingCard from '../components/common/KPIRingCard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -75,92 +76,63 @@ function PieTooltip({ active, payload }) {
 
 // Labels are hidden below a share-of-chart threshold so adjacent stacked
 // segments never overlap (e.g. a tiny Exchange sliver next to a big Billable one).
-function HoursStackedChart({ data, labelKey, horizontal }) {
+// Always vertical bars — wrapped in a horizontally-scrollable canvas so views
+// with many categories (e.g. Top 15 Employees) stay legible instead of
+// cramming bars together.
+function HoursStackedChart({ data, labelKey }) {
   const maxTotal = Math.max(...data.map(d => d.total), 1)
   const labelFmt = v => (v > 0 && v / maxTotal > 0.04 ? fmtHours(v) : '')
 
-  const bars = (
-    <>
-      <Bar dataKey="billable" name="Billable" stackId="a" fill={BILLABLE_COLOR} radius={horizontal ? [0, 0, 0, 0] : [0, 0, 0, 0]}>
-        <LabelList dataKey="billable" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
-      </Bar>
-      <Bar dataKey="nonBillable" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR}>
-        <LabelList dataKey="nonBillable" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
-      </Bar>
-      <Bar dataKey="exchange" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={horizontal ? [0, 6, 6, 0] : [6, 6, 0, 0]}>
-        <LabelList dataKey="exchange" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
-      </Bar>
-    </>
-  )
-
-  if (horizontal) {
-    return (
-      <ResponsiveContainer width="100%" height={Math.max(280, data.length * 28) + 36}>
-        <BarChart data={data} layout="vertical" margin={{ top: 32, left: 8, right: 24 }}>
-          <XAxis type="number" tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours} />
-          <YAxis type="category" dataKey={labelKey} width={120} tick={{ fill: 'currentColor', fontSize: 11 }} />
-          <Tooltip content={<HoursTooltip />} />
-          <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-          {bars}
-        </BarChart>
-      </ResponsiveContainer>
-    )
-  }
-
   return (
-    <ResponsiveContainer width="100%" height={360}>
-      <BarChart data={data} margin={{ top: 32, bottom: 8 }}>
-        <XAxis dataKey={labelKey} tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} height={70} />
-        <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours} />
-        <Tooltip content={<HoursTooltip />} />
-        <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-        {bars}
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="overflow-x-auto">
+      <div style={{ minWidth: Math.max(600, data.length * 70) }}>
+        <ResponsiveContainer width="100%" height={360}>
+          <BarChart data={data} margin={{ top: 32, bottom: 70 }}>
+            <XAxis dataKey={labelKey} tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} height={70} />
+            <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours} />
+            <Tooltip content={<HoursTooltip />} />
+            <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
+            <Bar dataKey="billable" name="Billable" stackId="a" fill={BILLABLE_COLOR}>
+              <LabelList dataKey="billable" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+            </Bar>
+            <Bar dataKey="nonBillable" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR}>
+              <LabelList dataKey="nonBillable" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
+            </Bar>
+            <Bar dataKey="exchange" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]}>
+              <LabelList dataKey="exchange" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   )
 }
 
-function PercentStackedChart({ data, labelKey, horizontal }) {
+function PercentStackedChart({ data, labelKey }) {
   const labelFmt = v => (v > 2 ? `${fmtPct(v)}%` : '')
 
-  const bars = (
-    <>
-      <Bar dataKey="billablePct" name="Billable" stackId="a" fill={BILLABLE_COLOR}>
-        <LabelList dataKey="billablePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
-      </Bar>
-      <Bar dataKey="nonBillablePct" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR}>
-        <LabelList dataKey="nonBillablePct" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
-      </Bar>
-      <Bar dataKey="exchangePct" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={horizontal ? [0, 6, 6, 0] : [6, 6, 0, 0]}>
-        <LabelList dataKey="exchangePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
-      </Bar>
-    </>
-  )
-
-  if (horizontal) {
-    return (
-      <ResponsiveContainer width="100%" height={Math.max(280, data.length * 28) + 36}>
-        <BarChart data={data} layout="vertical" margin={{ top: 32, left: 8, right: 24 }}>
-          <XAxis type="number" domain={[0, 100]} tickFormatter={v => `${Math.round(v)}%`} tick={{ fill: 'currentColor', fontSize: 11 }} />
-          <YAxis type="category" dataKey={labelKey} width={120} tick={{ fill: 'currentColor', fontSize: 11 }} />
-          <Tooltip content={<PercentTooltip />} />
-          <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-          {bars}
-        </BarChart>
-      </ResponsiveContainer>
-    )
-  }
-
   return (
-    <ResponsiveContainer width="100%" height={360}>
-      <BarChart data={data} margin={{ top: 32, bottom: 8 }}>
-        <XAxis dataKey={labelKey} tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} height={70} />
-        <YAxis domain={[0, 100]} tickFormatter={v => `${Math.round(v)}%`} tick={{ fill: 'currentColor', fontSize: 11 }} />
-        <Tooltip content={<PercentTooltip />} />
-        <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-        {bars}
-      </BarChart>
-    </ResponsiveContainer>
+    <div className="overflow-x-auto">
+      <div style={{ minWidth: Math.max(600, data.length * 70) }}>
+        <ResponsiveContainer width="100%" height={360}>
+          <BarChart data={data} margin={{ top: 32, bottom: 70 }}>
+            <XAxis dataKey={labelKey} tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" interval={0} height={70} />
+            <YAxis domain={[0, 100]} tickFormatter={v => `${Math.round(v)}%`} tick={{ fill: 'currentColor', fontSize: 11 }} />
+            <Tooltip content={<PercentTooltip />} />
+            <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
+            <Bar dataKey="billablePct" name="Billable" stackId="a" fill={BILLABLE_COLOR}>
+              <LabelList dataKey="billablePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+            </Bar>
+            <Bar dataKey="nonBillablePct" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR}>
+              <LabelList dataKey="nonBillablePct" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
+            </Bar>
+            <Bar dataKey="exchangePct" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]}>
+              <LabelList dataKey="exchangePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
   )
 }
 
@@ -205,10 +177,10 @@ export default function BillableTab() {
 
   const [viewMode, setViewMode] = useState('team')
   const viewData = {
-    team:     { hours: byTeam,          pct: byTeamPct,         labelKey: 'team',   horizontal: false },
-    employee: { hours: top15Employee,   pct: top15EmployeePct,  labelKey: 'name',   horizontal: true },
-    month:    { hours: byMonth,         pct: byMonthPct,        labelKey: 'period', horizontal: false },
-    quarter:  { hours: byQuarter,       pct: byQuarterPct,      labelKey: 'period', horizontal: false },
+    team:     { hours: byTeam,          pct: byTeamPct,         labelKey: 'team' },
+    employee: { hours: top15Employee,   pct: top15EmployeePct,  labelKey: 'name' },
+    month:    { hours: byMonth,         pct: byMonthPct,        labelKey: 'period' },
+    quarter:  { hours: byQuarter,       pct: byQuarterPct,      labelKey: 'period' },
   }[viewMode]
 
   if (isLoading) return <LoadingSpinner message="Loading billable data..." />
@@ -241,7 +213,7 @@ export default function BillableTab() {
         <KPICard label="Total Billable"     value={`${fmtHours(totalBillable)} hrs`} accent />
         <KPICard label="Total Non-Billable" value={`${fmtHours(totalNonBillable)} hrs`} />
         <KPICard label="Total Exchange"     value={`${fmtHours(totalExchange)} hrs`} />
-        <KPICard label="Billable Rate"      value={`${fmtPct(billablePct)}%`} sub="of total logged hours" />
+        <KPIRingCard label="Billable Rate"  value={billablePct} sub="of total logged hours" />
       </div>
 
       {/* Company-wide distribution */}
@@ -291,13 +263,13 @@ export default function BillableTab() {
           <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
             Hours — {VIEWS.find(v => v.id === viewMode).label}
           </h3>
-          <HoursStackedChart data={viewData.hours} labelKey={viewData.labelKey} horizontal={viewData.horizontal} />
+          <HoursStackedChart data={viewData.hours} labelKey={viewData.labelKey} />
         </div>
         <div className="card p-5">
           <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
             Share of Time (%) — {VIEWS.find(v => v.id === viewMode).label}
           </h3>
-          <PercentStackedChart data={viewData.pct} labelKey={viewData.labelKey} horizontal={viewData.horizontal} />
+          <PercentStackedChart data={viewData.pct} labelKey={viewData.labelKey} />
         </div>
       </div>
 
