@@ -2,20 +2,24 @@ import { useMemo, useState } from 'react'
 import { format, parseISO, subDays, differenceInCalendarDays } from 'date-fns'
 import { useRawTimeLog, useCapacity2026, useTasks } from '../hooks/useSheetData'
 import { useFilters } from '../context/FilterContext'
+import { useTheme } from '../context/ThemeContext'
 import {
   filterRows, filterCapacityRows,
   calcOverallKPIs, calcUtilizationByTeam, calcUtilizationByEmployee,
   calcWeeklyUtilizationTrend, getAvailableCapacityMonths,
   calcYTDUtilization, calcYTDMonthlyTrend, calcTeamUtilizationByDayOfWeek,
-  utilizationColor, calcHoursByTag, calcTagHoursByEmployee,
-  filterTasksByDate, calcTaskStatusByEmployee, buildTasksPivot,
-  calcCapacityByEmployee, calcTeamUtilizationSummary, calcCapacitySummary, calcGrowthPct,
+  utilizationColor, calcHoursByTag, calcTagHoursByEmployee, calcEmployeeHoursByTag,
+  filterTasksByDate, calcTaskStatusByEmployee, buildTasksPivot, calcOverdueTaskCountByEmployee,
+  getEmployeeTasksInRange,
+  calcCapacityByEmployeeForWeeklyReport, calcTeamUtilizationSummaryForWeeklyReport,
+  calcCapacitySummaryForWeeklyReport, calcGrowthPct,
 } from '../api/transformData'
-import { SEQUENTIAL_STOPS, CHART_COLORS } from '../utils/chartColors'
+import { SEQUENTIAL_STOPS, CHART_COLORS, sequentialColor } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import KPIRingCard from '../components/common/KPIRingCard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import TeamworkLink from '../components/common/TeamworkLink'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
   Legend as RechartsLegend, PieChart, Pie,
@@ -27,7 +31,7 @@ const UTIL_LEGEND = [
   { label: 'Good',       range: '75–85%',  color: SEQUENTIAL_STOPS[2] },
   { label: 'Very Good',  range: '85–90%',  color: SEQUENTIAL_STOPS[3] },
   { label: 'Excellent',  range: '90–95%',  color: SEQUENTIAL_STOPS[4] },
-  { label: 'Provisional',range: '> 95%',   color: SEQUENTIAL_STOPS[5] },
+  { label: 'Professional',range: '> 95%',  color: SEQUENTIAL_STOPS[5] },
 ]
 
 const UTIL_LEGEND_EXTRA = (
@@ -45,6 +49,12 @@ const COMPLETE_COLOR    = '#6858a2' // dark purple -> white label text
 const IN_PROGRESS_COLOR = '#8c8ffe' // light blue   -> dark label text
 const TREND_COLOR       = '#9354ff' // brand purple used for the weekly trend line
 const TASK_PAGE_SIZE = 50
+// Task Details' MaximizableChartCard uses `h === TASK_DETAILS_MODAL_HEIGHT`
+// (the render-prop's height argument) to detect "am I rendering inside the
+// maximized modal" — the modal shows the full unpaginated task list with no
+// Prev/Next controls, the compact card shows the normal paginated view.
+const TASK_DETAILS_HEIGHT = 500
+const TASK_DETAILS_MODAL_HEIGHT = 700
 
 const TAG_WHITELIST = ['Meeting', 'Reporting', 'Follow up', 'Brainstorming', 'Research', 'Training']
 const DAY_FULL_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -53,6 +63,58 @@ const DAY_FULL_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 
 // gets the same color across the pie chart and the per-employee chart.
 const TAG_COLOR_MAP = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, SEQUENTIAL_STOPS[i]]))
 const TAG_TEXT_MAP  = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, i <= 3 ? '#1a0e3d' : '#ffffff']))
+
+// ─── Dark Mode bar "depth" (Weekly Report only) ───────────────────────────
+// Every bar-chart color used on this tab (utilizationColor's 6 stops, the
+// Overdue Tasks chart's sequentialColor ramp, and the two fixed
+// Complete/In-Progress colors) is one of these same 7 hex values — CHART_COLORS
+// is their exact superset. That makes a fixed, pre-computed gradient per
+// color tractable instead of generating one dynamically per render.
+function shadeColor(hex, percent) {
+  const h = hex.replace('#', '')
+  const num = parseInt(h, 16)
+  const amt = Math.round(2.55 * percent)
+  const clamp = v => Math.max(0, Math.min(255, v))
+  const r = clamp((num >> 16) + amt)
+  const g = clamp(((num >> 8) & 0x00ff) + amt)
+  const b = clamp((num & 0x0000ff) + amt)
+  return `#${(0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).slice(1)}`
+}
+
+const barGradientId = hex => `wr-bar-grad-${hex.replace('#', '')}`
+
+// Lighter-top/darker-bottom vertical gradient per color, only swapped in for
+// Dark Mode — Light Mode keeps its existing flat Cell/Bar fills untouched.
+function barFill(hex, isDark) {
+  return isDark ? `url(#${barGradientId(hex)})` : hex
+}
+
+// Rendered ONCE for the whole tab (see <BarDepthDefsRoot/> in the main
+// component's return) — NOT once per chart. Every one of this tab's ~10
+// <BarChart> instances renders its own separate <svg>; earlier this
+// component was dropped into each of them individually, which meant the
+// SAME 7 gradient `id`s existed many times over in the document. `id` must
+// be document-unique — with duplicates, `fill="url(#id)"` resolution across
+// sibling SVGs is undefined/browser-dependent, and can silently resolve to
+// nothing (an invisible bar, geometry and label unaffected) instead of a
+// color. A single shared <defs> — referenced across every chart's own SVG
+// via the same `url(#id)` mechanism, which works fine across sibling SVGs
+// as long as the id is unique — removes the collision entirely. This was
+// the "YTD Utilization by Month" bars-invisible bug.
+function BarDepthDefsRoot() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+      <defs>
+        {CHART_COLORS.map(c => (
+          <linearGradient key={c} id={barGradientId(c)} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={shadeColor(c, 18)} />
+            <stop offset="100%" stopColor={shadeColor(c, -18)} />
+          </linearGradient>
+        ))}
+      </defs>
+    </svg>
+  )
+}
 
 const axisLabelStyle = { fill: 'currentColor', fontSize: 11, fontWeight: 600 }
 const fmtHours = v => Number(v ?? 0).toFixed(2)
@@ -162,12 +224,12 @@ function TeamUtilizationHeatmap({ matrix, teams, onCellClick }) {
       <table className="w-full text-sm border-separate" style={{ borderSpacing: '4px' }}>
         <thead>
           <tr>
-            <th className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+            <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                            dark:text-white/50 text-brand-500 sticky left-0">
               Day
             </th>
             {teams.map(team => (
-              <th key={team} className="text-center py-2 px-3 text-xs font-semibold uppercase tracking-wider
+              <th key={team} className="text-center py-2 px-3 text-xs font-medium uppercase tracking-wider
                                         dark:text-white/50 text-brand-500 whitespace-nowrap min-w-[100px]">
                 {team}
               </th>
@@ -226,9 +288,9 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
   if (!drillDown) return null
   const { label, rows } = drillDown
 
-  const employees = calcCapacityByEmployee(rows).sort((a, b) => b.util - a.util)
-  const teams     = calcTeamUtilizationSummary(rows)
-  const summary   = calcCapacitySummary(rows)
+  const employees = calcCapacityByEmployeeForWeeklyReport(rows).sort((a, b) => b.util - a.util)
+  const teams     = calcTeamUtilizationSummaryForWeeklyReport(rows)
+  const summary   = calcCapacitySummaryForWeeklyReport(rows)
 
   return (
     <div
@@ -274,14 +336,14 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
           ) : (
             <>
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider mb-2 dark:text-white/50 text-brand-500">
+                <h4 className="text-xs font-medium uppercase tracking-wider mb-2 dark:text-white/50 text-brand-500">
                   By Team
                 </h4>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b dark:border-white/10 border-brand-200">
                       {['Team', 'Logged (hrs)', 'Capacity (hrs)', 'Utilization'].map(h => (
-                        <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                        <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                                dark:text-white/50 text-brand-500 whitespace-nowrap">
                           {h}
                         </th>
@@ -305,14 +367,14 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider mb-2 dark:text-white/50 text-brand-500">
+                <h4 className="text-xs font-medium uppercase tracking-wider mb-2 dark:text-white/50 text-brand-500">
                   By Employee
                 </h4>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b dark:border-white/10 border-brand-200">
                       {['Employee', 'Team', 'Logged (hrs)', 'Capacity (hrs)', 'Utilization'].map(h => (
-                        <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                        <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                                dark:text-white/50 text-brand-500 whitespace-nowrap">
                           {h}
                         </th>
@@ -343,6 +405,154 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
   )
 }
 
+// Employee's task list — opened by clicking a bar in "Hours by Time Log Tag
+// per Employee". `tasks` is already scoped to that employee + the tab's
+// active date range by the caller. Same modal shell/style as
+// PeriodDrillDownModal above.
+function EmployeeTasksModal({ drillDown, onClose }) {
+  if (!drillDown) return null
+  const { name, tasks } = drillDown
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl
+                   border dark:border-white/10 border-brand-200
+                   dark:bg-brand-950 bg-white"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-brand-200">
+          <h3 className="text-base font-semibold dark:text-white text-brand-900">{name} — Tasks</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-lg leading-none px-2 dark:text-white/50 text-brand-400
+                       hover:dark:text-white hover:text-brand-800"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-4">
+          {tasks.length === 0 ? (
+            <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
+              No tasks found for this employee in the current period.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b dark:border-white/10 border-brand-200">
+                  {['Task Name', 'Status', 'Created', 'Due Date'].map(h => (
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
+                                           dark:text-white/50 text-brand-500 whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((t, i) => (
+                  <tr key={i} className={`border-b dark:border-white/5 border-brand-100
+                    ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
+                    <td className="py-2 px-3 font-medium dark:text-white text-brand-900 max-w-[260px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="truncate" title={t.taskName}>{t.taskName || '—'}</span>
+                        <TeamworkLink taskId={t.taskId} />
+                      </div>
+                    </td>
+                    <td className="py-2 px-3">
+                      <span
+                        className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{
+                          backgroundColor: t.status === 'Complete' ? COMPLETE_COLOR : IN_PROGRESS_COLOR,
+                          color: t.status === 'Complete' ? '#ffffff' : '#1a0e3d',
+                        }}
+                      >
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.createdDate || '—'}</td>
+                    <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.dueDate || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Per-tag employee breakdown — opened by clicking a slice of the "Hours by
+// Time Log Tag" donut. `employees` is already scoped to that tag + the
+// current filters by the caller. Same modal shell/style as the others above.
+function TagEmployeesModal({ drillDown, onClose }) {
+  if (!drillDown) return null
+  const { tag, employees } = drillDown
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl
+                   border dark:border-white/10 border-brand-200
+                   dark:bg-brand-950 bg-white"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-brand-200">
+          <h3 className="text-base font-semibold dark:text-white text-brand-900">{tag} — by Employee</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-lg leading-none px-2 dark:text-white/50 text-brand-400
+                       hover:dark:text-white hover:text-brand-800"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-4">
+          {employees.length === 0 ? (
+            <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
+              No hours logged under this tag for the current filters.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b dark:border-white/10 border-brand-200">
+                  {['Employee', 'Hours'].map(h => (
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
+                                           dark:text-white/50 text-brand-500">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {employees.map((e, i) => (
+                  <tr key={e.name} className={`border-b dark:border-white/5 border-brand-100
+                    ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
+                    <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{e.name}</td>
+                    <td className="py-2 px-3 font-semibold dark:text-white text-brand-900">{fmtHours(e.hours)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Week-over-week (generalized to "current filter period vs. the immediately
 // preceding period of equal length") — so it behaves as literal week-over-week
 // when the main filter spans 7 days (the default), and degrades gracefully to
@@ -354,6 +564,7 @@ function WeekOverWeekCard({ currentUtil, previousUtil, delta, currentLabel, prev
       className="card p-5 flex flex-col items-center justify-center gap-1 text-center rounded-2xl
                  bg-gradient-to-br dark:from-brand-600/30 dark:via-brand-700/10 dark:to-transparent
                  from-brand-200/70 via-brand-100/30 to-transparent"
+      style={{ minHeight: UTIL_WIDGET_MIN_HEIGHT }}
     >
       <p className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
         Week-over-Week Utilization
@@ -407,7 +618,97 @@ function HighLowSpreadCard({ label, maxLabel, maxValue, minLabel, minValue }) {
   )
 }
 
+const UTILIZATION_TARGET = 88
+// Shared explicit height for the Utilization Target gauge and Week-over-Week
+// cards, so they always match regardless of their differing internal
+// content shapes (a semi-circle SVG vs. plain text lines) — inline style,
+// not a Tailwind arbitrary class, since the value needs to be a real shared
+// constant rather than a string Tailwind's build-time scanner can pick up.
+const UTIL_WIDGET_MIN_HEIGHT = 200
+
+// Semi-circle progress gauge vs. a fixed 88% target. Arc color turns green
+// once the current period's Overall Utilization reaches/exceeds the target
+// (a clear positive signal), brand purple otherwise.
+function UtilizationTargetGauge({ current, target = UTILIZATION_TARGET }) {
+  const pct = Math.max(0, Math.min(100, Math.round(current)))
+  const diff = pct - target
+  const isAbove = diff >= 0
+  const arcColor = isAbove ? '#22c55e' : '#9354ff'
+  const data = [{ v: pct }, { v: Math.max(0, 100 - pct) }]
+  // Wrapper div and ResponsiveContainer must share the same explicit height —
+  // a mismatch here (previously 110px wrapper vs. 190px chart) is what let
+  // the SVG spill past its box and overlap the "Target" text below it.
+  // Sized so title + gauge + target line + remaining line fit UTIL_WIDGET_MIN_HEIGHT
+  // (matching Week-over-Week's card height) without cramming or empty space.
+  const GAUGE_HEIGHT = 90
+  // Fixed pixel radii (not percentages) — percentage radii on a semi-circle
+  // (cy at the very bottom) get sized by Recharts as if fitting a FULL circle
+  // in the box, which can shrink the visible arc unpredictably and put the
+  // hollow center's actual pixel bounds somewhere other than where the "85%"
+  // label was positioned, reading as an overlap. Fixed px values make both
+  // the arc and the label's safe zone deterministic.
+  const OUTER_R = 78
+  const INNER_R = 42
+
+  return (
+    <div
+      className="card p-5 flex flex-col items-center justify-center gap-2 rounded-2xl w-full
+                 bg-gradient-to-br dark:from-brand-600/30 dark:via-brand-700/10 dark:to-transparent
+                 from-brand-200/70 via-brand-100/30 to-transparent"
+      style={{ minHeight: UTIL_WIDGET_MIN_HEIGHT }}
+    >
+      {/* 1. Title */}
+      <p className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500 text-center">
+        Utilization Target
+      </p>
+
+      {/* 2. Gauge, with its own dedicated space */}
+      <div className="relative w-full" style={{ height: GAUGE_HEIGHT }}>
+        <ResponsiveContainer width="100%" height={GAUGE_HEIGHT}>
+          <PieChart>
+            <Pie
+              data={data}
+              dataKey="v"
+              cx="50%"
+              cy="100%"
+              startAngle={180}
+              endAngle={0}
+              innerRadius={INNER_R}
+              outerRadius={OUTER_R}
+              stroke="none"
+              isAnimationActive={false}
+            >
+              <Cell fill={arcColor} />
+              <Cell fill="rgba(140,143,254,0.15)" />
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+        {/* 3. Current utilization — anchored inside the guaranteed-hollow
+            band (radius < INNER_R, i.e. never reaches the colored arc),
+            centered on the semi-circle's horizontal diameter (cy). */}
+        <div
+          className="absolute inset-x-0 bottom-0 flex items-end justify-center"
+          style={{ height: INNER_R }}
+        >
+          <span className="text-3xl font-bold leading-none" style={{ color: arcColor }}>{pct}%</span>
+        </div>
+      </div>
+
+      {/* 4. Target, on its own line */}
+      <p className="text-xs dark:text-white/60 text-brand-600">
+        Target: <span className="font-semibold dark:text-white text-brand-900">{target}%</span>
+      </p>
+
+      {/* 5. Remaining/above target, on its own line */}
+      <p className={`text-xs font-semibold ${isAbove ? 'text-green-400' : 'dark:text-white/60 text-brand-600'}`}>
+        {isAbove ? `+${diff}% above target` : `${Math.abs(diff)}% remaining to reach target`}
+      </p>
+    </div>
+  )
+}
+
 export default function WeeklyReport() {
+  const { isDark } = useTheme()
   const filters = useFilters()
   const { data: rawRows = [], isLoading: loadingLog, error: errLog } = useRawTimeLog()
   const { data: capRows = [], isLoading: loadingCap, error: errCap } = useCapacity2026()
@@ -416,7 +717,7 @@ export default function WeeklyReport() {
   const filteredLog = useMemo(() => filterRows(rawRows, filters),        [rawRows, filters])
   const filteredCap = useMemo(() => filterCapacityRows(capRows, filters), [capRows, filters])
 
-  const kpis        = useMemo(() => calcOverallKPIs(filteredLog, filteredCap),        [filteredLog, filteredCap])
+  const kpis        = useMemo(() => calcOverallKPIs(filteredCap), [filteredCap])
 
   // Team/Employee-only filtered Capacity rows — same main-filter selections
   // as filteredCap, but WITHOUT the main date-range restriction. The YTD
@@ -437,7 +738,7 @@ export default function WeeklyReport() {
   const ytdMonthly = useMemo(() => calcYTDMonthlyTrend(filteredCapNoDateRange, filters.endDate),  [filteredCapNoDateRange, filters.endDate])
 
   const byTeam      = useMemo(() => calcUtilizationByTeam(filteredCap),  [filteredCap])
-  const byEmployee  = useMemo(() => calcUtilizationByEmployee(filteredLog, filteredCap), [filteredLog, filteredCap])
+  const byEmployee  = useMemo(() => calcUtilizationByEmployee(filteredCap), [filteredCap])
   const byTag       = useMemo(() => calcHoursByTag(filteredLog, TAG_WHITELIST), [filteredLog])
   const tagByEmployee = useMemo(() => calcTagHoursByEmployee(filteredLog, TAG_WHITELIST), [filteredLog])
   const top15TagByEmployee = tagByEmployee.slice(0, 15)
@@ -445,6 +746,23 @@ export default function WeeklyReport() {
   // Team Utilization per Day (heatmap) — uses filteredCap (team/employee AND
   // date range), per spec, so it reflects the exact period selected above.
   const dayOfWeekHeatmap = useMemo(() => calcTeamUtilizationByDayOfWeek(filteredCap), [filteredCap])
+  // Flattened for export only — the heatmap's own matrix/teams shape (one row
+  // per day, one cell object per team) isn't directly spreadsheet-able.
+  const heatmapExportRows = useMemo(
+    () => dayOfWeekHeatmap.matrix.map(row => ({
+      day: row.day,
+      ...Object.fromEntries(row.cells.map(c => [c.team, c])),
+    })),
+    [dayOfWeekHeatmap]
+  )
+  const heatmapExportColumns = useMemo(() => [
+    { key: 'day', label: 'Day' },
+    ...dayOfWeekHeatmap.teams.map(team => ({
+      key: team,
+      label: team,
+      format: cell => (cell?.isOffDay ? 'Off Day' : `${cell?.utilPct ?? 0}%`),
+    })),
+  ], [dayOfWeekHeatmap])
 
   // byTeam is already sorted descending by utilPct, so the last 6 entries are
   // the lowest 6 — and stay in descending order, matching the Top 5 chart's style.
@@ -472,12 +790,12 @@ export default function WeeklyReport() {
   const prevEndDate   = format(subDays(parseISO(filters.startDate), 1), 'yyyy-MM-dd')
   const prevStartDate = format(subDays(parseISO(prevEndDate), rangeDays - 1), 'yyyy-MM-dd')
 
-  const currentPeriodSummary = useMemo(() => calcCapacitySummary(filteredCap), [filteredCap])
+  const currentPeriodSummary = useMemo(() => calcCapacitySummaryForWeeklyReport(filteredCap), [filteredCap])
   const previousPeriodRows = useMemo(
     () => filteredCapNoDateRange.filter(r => r.Date && r.Date >= prevStartDate && r.Date <= prevEndDate),
     [filteredCapNoDateRange, prevStartDate, prevEndDate]
   )
-  const previousPeriodSummary = useMemo(() => calcCapacitySummary(previousPeriodRows), [previousPeriodRows])
+  const previousPeriodSummary = useMemo(() => calcCapacitySummaryForWeeklyReport(previousPeriodRows), [previousPeriodRows])
   const weekOverWeekDelta = calcGrowthPct(previousPeriodSummary.util, currentPeriodSummary.util)
 
   const formatDateRangeLabel = (startStr, endStr) =>
@@ -520,6 +838,28 @@ export default function WeeklyReport() {
   function handleHeatmapCellClick(dowIndex, team) {
     const rows = filteredCap.filter(r => r.Date && parseISO(r.Date).getDay() === dowIndex && r.Team === team)
     openPeriodDrillDown(`${team} — ${DAY_FULL_NAMES[dowIndex]}`, rows)
+  }
+
+  // ─── "Hours by Time Log Tag per Employee" drill-down — click any segment
+  // of an employee's stacked bar to see their task list (Tasks sheet),
+  // scoped to that employee + the tab's active main-filter date range.
+  const [employeeTasksDrillDown, setEmployeeTasksDrillDown] = useState(null) // { name, tasks } | null
+  function handleTagPerEmployeeBarClick(data) {
+    const point = chartPoint(data)
+    if (!point?.name) return
+    const tasks = getEmployeeTasksInRange(rawTasks, point.name, filters.startDate, filters.endDate)
+    setEmployeeTasksDrillDown({ name: point.name, tasks })
+  }
+
+  // ─── "Hours by Time Log Tag" donut drill-down — click a slice to see every
+  // employee who logged hours under that tag, from the same filteredLog rows
+  // the donut itself was built from.
+  const [tagEmployeesDrillDown, setTagEmployeesDrillDown] = useState(null) // { tag, employees } | null
+  function handleTagPieClick(data) {
+    const point = chartPoint(data)
+    if (!point?.tag) return
+    const employees = calcEmployeeHoursByTag(filteredLog, point.tag)
+    setTagEmployeesDrillDown({ tag: point.tag, employees })
   }
 
   // ─── Weekly Utilization Trend — independent Month dropdown, but still
@@ -580,7 +920,16 @@ export default function WeeklyReport() {
     () => buildTasksPivot(filteredTasks).sort((a, b) => (b.overdueDays ?? -1) - (a.overdueDays ?? -1)),
     [filteredTasks]
   )
-  const top20TaskStatus = taskStatusByEmployee.slice(0, 20)
+  const allTaskStatus = taskStatusByEmployee
+
+  // Overdue Tasks by Employee — same filteredTasks the Task Details table
+  // renders (Overdue Days > 0), Team looked up from the full, unfiltered
+  // Capacity rows so the Business Development/Trainees exclusion is reliable
+  // no matter what the main Team/Employee filter currently has selected.
+  const overdueByEmployee = useMemo(
+    () => calcOverdueTaskCountByEmployee(filteredTasks, capRows),
+    [filteredTasks, capRows]
+  )
   const taskTotalPages  = Math.max(1, Math.ceil(taskPivot.length / TASK_PAGE_SIZE))
   const taskPageRows    = taskPivot.slice(taskPage * TASK_PAGE_SIZE, taskPage * TASK_PAGE_SIZE + TASK_PAGE_SIZE)
 
@@ -605,8 +954,13 @@ export default function WeeklyReport() {
   }
 
   return (
-    <div className="space-y-6 pt-4">
-      {/* Top widgets — fixed 2-column layout: Totals / High-Low comparisons / Utilization donuts */}
+    <div className="space-y-6 pt-4 weekly-report-tab">
+      <BarDepthDefsRoot />
+
+      {/* Top widgets — fixed 2-column layout: Totals / High-Low comparisons / Utilization donuts.
+          Wrapped as one combined data-pdf-section — this whole block is "page 1's
+          KPI cards" for the PDF export, captured and placed as a single unit. */}
+      <div data-pdf-section data-pdf-title="KPI Summary" className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <KPICard
           label="Total Hours"
@@ -640,6 +994,9 @@ export default function WeeklyReport() {
         />
       </div>
 
+      {/* Utilization Target gauge — near the YTD/Overall Utilization donuts above */}
+      <UtilizationTargetGauge current={kpis.utilization} />
+
       {/* Week-over-Week — last widget before the charts begin, full width */}
       <WeekOverWeekCard
         currentUtil={currentPeriodSummary.util}
@@ -648,10 +1005,20 @@ export default function WeeklyReport() {
         currentLabel={currentRangeLabel}
         previousLabel={previousRangeLabel}
       />
+      </div>
 
       {/* ── Charts ── */}
 
-      <MaximizableChartCard title="YTD Utilization by Month" height={260} modalHeight={460}>
+      <MaximizableChartCard
+        title="YTD Utilization by Month"
+        height={260}
+        modalHeight={460}
+        exportRows={ytdMonthly}
+        exportColumns={[
+          { key: 'month', label: 'Month' },
+          { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+        ]}
+      >
         {h => (
           <ResponsiveContainer width="100%" height={h}>
             <BarChart data={ytdMonthly} margin={{ top: 24, bottom: 8 }}>
@@ -660,7 +1027,7 @@ export default function WeeklyReport() {
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleMonthBarClick}>
                 {ytdMonthly.map((entry, i) => (
-                  <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                  <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                 ))}
                 <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
               </Bar>
@@ -675,6 +1042,11 @@ export default function WeeklyReport() {
         headerExtra={monthSelect}
         height={280}
         modalHeight={480}
+        exportRows={weeklyTrend}
+        exportColumns={[
+          { key: 'week', label: 'Week' },
+          { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+        ]}
       >
         {h => (
           <ResponsiveContainer width="100%" height={h}>
@@ -712,7 +1084,13 @@ export default function WeeklyReport() {
       </MaximizableChartCard>
 
       {/* Team Utilization per Day — Sun-Sat x Team color matrix */}
-      <MaximizableChartCard title="Team Utilization per Day" height={320} modalHeight={520}>
+      <MaximizableChartCard
+        title="Team Utilization per Day"
+        height={320}
+        modalHeight={520}
+        exportRows={heatmapExportRows}
+        exportColumns={heatmapExportColumns}
+      >
         {() => (
           <TeamUtilizationHeatmap
             matrix={dayOfWeekHeatmap.matrix}
@@ -724,7 +1102,16 @@ export default function WeeklyReport() {
 
       {/* Top 5 / Bottom 6 teams */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <MaximizableChartCard title="Top 5 Teams by Utilization" height={280} modalHeight={480}>
+        <MaximizableChartCard
+          title="Top 5 Teams by Utilization"
+          height={280}
+          modalHeight={480}
+          exportRows={top5}
+          exportColumns={[
+            { key: 'team', label: 'Team' },
+            { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+          ]}
+        >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
               <BarChart data={top5} margin={{ top: 24, bottom: 40 }}>
@@ -733,7 +1120,7 @@ export default function WeeklyReport() {
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
                   {top5.map((entry, i) => (
-                    <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -742,7 +1129,16 @@ export default function WeeklyReport() {
           )}
         </MaximizableChartCard>
 
-        <MaximizableChartCard title="Bottom 6 Teams by Utilization" height={280} modalHeight={480}>
+        <MaximizableChartCard
+          title="Bottom 6 Teams by Utilization"
+          height={280}
+          modalHeight={480}
+          exportRows={bottom6}
+          exportColumns={[
+            { key: 'team', label: 'Team' },
+            { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+          ]}
+        >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
               <BarChart data={bottom6} margin={{ top: 24, bottom: 40 }}>
@@ -751,7 +1147,7 @@ export default function WeeklyReport() {
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
                   {bottom6.map((entry, i) => (
-                    <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -762,7 +1158,17 @@ export default function WeeklyReport() {
       </div>
 
       {/* Utilization by Team — full chart */}
-      <MaximizableChartCard title="Utilization by Team" headerExtra={UTIL_LEGEND_EXTRA} height={280} modalHeight={480}>
+      <MaximizableChartCard
+        title="Utilization by Team"
+        headerExtra={UTIL_LEGEND_EXTRA}
+        height={280}
+        modalHeight={480}
+        exportRows={byTeam}
+        exportColumns={[
+          { key: 'team', label: 'Team' },
+          { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+        ]}
+      >
         {h => (
           <ResponsiveContainer width="100%" height={h}>
             <BarChart data={byTeam} margin={{ top: 24, bottom: 40 }}>
@@ -771,7 +1177,7 @@ export default function WeeklyReport() {
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
                 {byTeam.map((entry, i) => (
-                  <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                  <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                 ))}
                 <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
               </Bar>
@@ -782,7 +1188,17 @@ export default function WeeklyReport() {
 
       {/* Top 5 / Bottom 5 employees */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <MaximizableChartCard title="Top 5 Employees by Utilization" height={280} modalHeight={480}>
+        <MaximizableChartCard
+          title="Top 5 Employees by Utilization"
+          height={280}
+          modalHeight={480}
+          exportRows={top5Employees}
+          exportColumns={[
+            { key: 'name', label: 'Employee' },
+            { key: 'team', label: 'Team' },
+            { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+          ]}
+        >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
               <BarChart data={top5Employees} margin={{ top: 24, bottom: 40 }}>
@@ -791,7 +1207,7 @@ export default function WeeklyReport() {
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
                   {top5Employees.map((entry, i) => (
-                    <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -800,7 +1216,17 @@ export default function WeeklyReport() {
           )}
         </MaximizableChartCard>
 
-        <MaximizableChartCard title="Bottom 5 Employees by Utilization" height={280} modalHeight={480}>
+        <MaximizableChartCard
+          title="Bottom 5 Employees by Utilization"
+          height={280}
+          modalHeight={480}
+          exportRows={bottom5Employees}
+          exportColumns={[
+            { key: 'name', label: 'Employee' },
+            { key: 'team', label: 'Team' },
+            { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+          ]}
+        >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
               <BarChart data={bottom5Employees} margin={{ top: 24, bottom: 40 }}>
@@ -809,7 +1235,7 @@ export default function WeeklyReport() {
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
                   {bottom5Employees.map((entry, i) => (
-                    <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -824,6 +1250,14 @@ export default function WeeklyReport() {
         title={`Utilization by Employee — All (${byEmployee.length})`}
         height={380}
         modalHeight={520}
+        exportRows={byEmployee}
+        exportColumns={[
+          { key: 'name', label: 'Employee' },
+          { key: 'team', label: 'Team' },
+          { key: 'logged', label: 'Logged (hrs)' },
+          { key: 'capacity', label: 'Capacity (hrs)' },
+          { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+        ]}
       >
         {h => (
           // Wide, horizontally-scrollable canvas — enough per-bar width to keep
@@ -838,7 +1272,7 @@ export default function WeeklyReport() {
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
                     {byEmployee.map((entry, i) => (
-                      <Cell key={i} fill={utilizationColor(entry.utilPct).bg} />
+                      <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                     ))}
                     <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                   </Bar>
@@ -850,50 +1284,68 @@ export default function WeeklyReport() {
       </MaximizableChartCard>
 
       {/* Employee table */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
-          Utilization by Employee
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Employee', 'Team', 'Logged (hrs)', 'Capacity (hrs)', 'Utilization'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {byEmployee.map((emp, i) => (
-                <tr
-                  key={emp.name}
-                  className={`border-b dark:border-white/5 border-brand-100
-                    ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}
-                >
-                  <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{emp.name}</td>
-                  <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.team}</td>
-                  <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.logged.toLocaleString()}</td>
-                  <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.capacity.toLocaleString()}</td>
-                  <td className="py-2 px-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold" style={{ color: utilizationColor(emp.utilPct).bg }}>
-                        {emp.utilPct}%
-                      </span>
-                      <UtilBadge pct={emp.utilPct} />
-                    </div>
-                  </td>
+      <MaximizableChartCard
+        title="Utilization by Employee"
+        exportRows={byEmployee}
+        exportColumns={[
+          { key: 'name', label: 'Employee' },
+          { key: 'team', label: 'Team' },
+          { key: 'logged', label: 'Logged (hrs)' },
+          { key: 'capacity', label: 'Capacity (hrs)' },
+          { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
+        ]}
+      >
+        {() => (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b dark:border-white/10 border-brand-200">
+                  {['Employee', 'Team', 'Logged (hrs)', 'Capacity (hrs)', 'Utilization'].map(h => (
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
+                                           dark:text-white/50 text-brand-500">
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {byEmployee.map((emp, i) => (
+                  <tr
+                    key={emp.name}
+                    className={`border-b dark:border-white/5 border-brand-100
+                      ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}
+                  >
+                    <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{emp.name}</td>
+                    <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.team}</td>
+                    <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.logged.toLocaleString()}</td>
+                    <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.capacity.toLocaleString()}</td>
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold" style={{ color: utilizationColor(emp.utilPct).bg }}>
+                          {emp.utilPct}%
+                        </span>
+                        <UtilBadge pct={emp.utilPct} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </MaximizableChartCard>
 
       {/* Time Log Tags — overall distribution */}
-      <MaximizableChartCard title="Hours by Time Log Tag" height={320} modalHeight={460}>
+      <MaximizableChartCard
+        title="Hours by Time Log Tag"
+        height={320}
+        modalHeight={460}
+        exportRows={byTag}
+        exportColumns={[
+          { key: 'tag', label: 'Tag' },
+          { key: 'hours', label: 'Hours', format: fmtHours },
+        ]}
+      >
         {h => (
           <ResponsiveContainer width="100%" height={h}>
             <PieChart>
@@ -904,6 +1356,8 @@ export default function WeeklyReport() {
                 innerRadius={65}
                 outerRadius={105}
                 paddingAngle={2}
+                cursor="pointer"
+                onClick={handleTagPieClick}
                 label={({ tag, hours, percent }) => `${tag}: ${fmtHours(hours)}h (${fmtPct(percent * 100)}%)`}
                 labelLine={{ stroke: 'currentColor', strokeOpacity: 0.4 }}
               >
@@ -923,6 +1377,12 @@ export default function WeeklyReport() {
         title="Hours by Time Log Tag per Employee (Top 15)"
         height={380}
         modalHeight={560}
+        exportRows={top15TagByEmployee}
+        exportColumns={[
+          { key: 'name', label: 'Employee' },
+          ...TAG_WHITELIST.map(tag => ({ key: tag, label: tag, format: fmtHours })),
+          { key: 'total', label: 'Total (hrs)', format: fmtHours },
+        ]}
       >
         {h => (
           <div className="overflow-x-auto">
@@ -943,8 +1403,10 @@ export default function WeeklyReport() {
                         dataKey={tag}
                         name={tag}
                         stackId="a"
-                        fill={TAG_COLOR_MAP[tag]}
+                        fill={barFill(TAG_COLOR_MAP[tag], isDark)}
                         radius={i === TAG_WHITELIST.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
+                        cursor="pointer"
+                        onClick={handleTagPerEmployeeBarClick}
                       >
                         <LabelList dataKey={tag} position="center" formatter={labelFmt}
                           style={{ fill: TAG_TEXT_MAP[tag], fontSize: 10, fontWeight: 700 }} />
@@ -960,7 +1422,7 @@ export default function WeeklyReport() {
 
       {/* Tasks — Complete vs In Progress by employee */}
       <div className="card p-4 flex flex-wrap items-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wider dark:text-white/50 text-brand-500">
+        <span className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
           Task Created Date
         </span>
         <div className="flex items-center gap-2">
@@ -979,7 +1441,7 @@ export default function WeeklyReport() {
             className="filter-input"
           />
         </div>
-        <span className="text-xs dark:text-white/40 text-brand-400">
+        <span className="text-xs font-light dark:text-white/40 text-brand-400">
           Independent of the global date filter above — applies only to the task sections below
         </span>
       </div>
@@ -993,25 +1455,31 @@ export default function WeeklyReport() {
       ) : (
         <>
           <MaximizableChartCard
-            title="Tasks Complete vs In Progress by Employee (Top 20)"
+            title={`Tasks Complete vs In Progress by Employee — All (${allTaskStatus.length})`}
             height={420}
             modalHeight={560}
+            exportRows={allTaskStatus}
+            exportColumns={[
+              { key: 'name', label: 'Employee' },
+              { key: 'complete', label: 'Complete' },
+              { key: 'inProgress', label: 'In Progress' },
+            ]}
           >
             {h => (
               <div className="overflow-x-auto">
-                <div style={{ minWidth: Math.max(900, top20TaskStatus.length * 60) }}>
+                <div style={{ minWidth: Math.max(900, allTaskStatus.length * 60) }}>
                   <ResponsiveContainer width="100%" height={h}>
-                    <BarChart data={top20TaskStatus} margin={{ top: 24, bottom: 90 }}>
+                    <BarChart data={allTaskStatus} margin={{ top: 32, bottom: 90 }}>
                       <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                         angle={-35} textAnchor="end" interval={0} />
                       <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} />
                       <Tooltip content={<GenericTooltip />} />
-                      <RechartsLegend wrapperStyle={{ fontSize: '12px' }} />
-                      <Bar dataKey="complete" name="Complete" stackId="a" fill={COMPLETE_COLOR} radius={[0, 0, 0, 0]}>
+                      <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
+                      <Bar dataKey="complete" name="Complete" stackId="a" fill={barFill(COMPLETE_COLOR, isDark)} radius={[0, 0, 0, 0]}>
                         <LabelList dataKey="complete" position="center"
                           formatter={v => (v > 0 ? v : '')} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
                       </Bar>
-                      <Bar dataKey="inProgress" name="In Progress" stackId="a" fill={IN_PROGRESS_COLOR} radius={[6, 6, 0, 0]}>
+                      <Bar dataKey="inProgress" name="In Progress" stackId="a" fill={barFill(IN_PROGRESS_COLOR, isDark)} radius={[6, 6, 0, 0]}>
                         <LabelList dataKey="inProgress" position="center"
                           formatter={v => (v > 0 ? v : '')} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
                       </Bar>
@@ -1022,78 +1490,141 @@ export default function WeeklyReport() {
             )}
           </MaximizableChartCard>
 
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <h3 className="text-sm font-semibold dark:text-white/80 text-brand-800">
-                Task Details {taskPivot.length > 0 && (
-                  <span className="dark:text-white/40 text-brand-400 font-normal">
-                    ({taskPivot.length.toLocaleString()} tasks, sorted by most overdue)
-                  </span>
-                )}
-              </h3>
-              <div className="flex items-center gap-2 text-xs dark:text-white/50 text-brand-500">
-                <button
-                  onClick={() => goToTaskPage(taskPage - 1)}
-                  disabled={taskPage === 0}
-                  className="px-2 py-1 rounded-lg dark:bg-white/10 bg-brand-100 disabled:opacity-30"
-                >
-                  ‹ Prev
-                </button>
-                <span>Page {taskPage + 1} of {taskTotalPages}</span>
-                <button
-                  onClick={() => goToTaskPage(taskPage + 1)}
-                  disabled={taskPage >= taskTotalPages - 1}
-                  className="px-2 py-1 rounded-lg dark:bg-white/10 bg-brand-100 disabled:opacity-30"
-                >
-                  Next ›
-                </button>
-              </div>
-            </div>
+          {/* Overdue Tasks by Employee — same task rows as Task Details below,
+              Overdue Days > 0 only, Business Development & Trainees excluded */}
+          <MaximizableChartCard
+            title="Overdue Tasks by Employee"
+            height={380}
+            modalHeight={520}
+            exportRows={overdueByEmployee}
+            exportColumns={[
+              { key: 'name', label: 'Employee' },
+              { key: 'count', label: 'Overdue Tasks' },
+            ]}
+          >
+            {h => (
+              overdueByEmployee.length === 0 ? (
+                <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
+                  No overdue tasks for the current filters.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <div style={{ minWidth: Math.max(900, overdueByEmployee.length * 60) }}>
+                    <ResponsiveContainer width="100%" height={h}>
+                      <BarChart data={overdueByEmployee} margin={{ top: 24, bottom: 90 }}>
+                        <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
+                          angle={-35} textAnchor="end" interval={0} />
+                        <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={false} />
+                        <Tooltip content={<GenericTooltip />} />
+                        <Bar dataKey="count" name="Overdue Tasks" radius={[6, 6, 0, 0]}>
+                          {overdueByEmployee.map((_, i) => (
+                            <Cell key={i} fill={barFill(sequentialColor(i, overdueByEmployee.length), isDark)} />
+                          ))}
+                          <LabelList dataKey="count" position="top" style={axisLabelStyle} />
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )
+            )}
+          </MaximizableChartCard>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b dark:border-white/10 border-brand-200">
-                    {['Task Name', 'Assignee', 'Created', 'Start', 'End (Due)', 'Closed', 'Overdue Days'].map(h => (
-                      <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
-                                             dark:text-white/50 text-brand-500 whitespace-nowrap">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {taskPageRows.map((t, i) => (
-                    <tr
-                      key={t.taskId + i}
-                      className={`border-b dark:border-white/5 border-brand-100
-                        ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}
-                    >
-                      <td className="py-2 px-3 font-medium dark:text-white text-brand-900 max-w-[240px] truncate">{t.taskName || '—'}</td>
-                      <td className="py-2 px-3 dark:text-white/70 text-brand-600 max-w-[200px] truncate">{t.assignee || '—'}</td>
-                      <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.createdDate || '—'}</td>
-                      <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.startDate || '—'}</td>
-                      <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.endDate || '—'}</td>
-                      <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.closedDate || '—'}</td>
-                      <td className="py-2 px-3">
-                        {t.overdueDays === null ? (
-                          <span className="dark:text-white/30 text-brand-300">—</span>
-                        ) : t.overdueDays > 0 ? (
-                          <span className="font-semibold" style={{ color: '#6858a2' }}>{t.overdueDays}d</span>
-                        ) : (
-                          <span className="dark:text-white/50 text-brand-500">0d</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <MaximizableChartCard
+            title={taskPivot.length > 0
+              ? `Task Details (${taskPivot.length.toLocaleString()} tasks, sorted by most overdue)`
+              : 'Task Details'}
+            height={TASK_DETAILS_HEIGHT}
+            modalHeight={TASK_DETAILS_MODAL_HEIGHT}
+            exportRows={taskPivot}
+            exportColumns={[
+              { key: 'taskName', label: 'Task Name' },
+              { key: 'assignee', label: 'Assignee' },
+              { key: 'createdDate', label: 'Created' },
+              { key: 'startDate', label: 'Start' },
+              { key: 'endDate', label: 'End (Due)' },
+              { key: 'closedDate', label: 'Closed' },
+              { key: 'overdueDays', label: 'Overdue Days', format: v => (v === null ? '' : v) },
+            ]}
+          >
+            {h => {
+              const maximized = h === TASK_DETAILS_MODAL_HEIGHT
+              const rows = maximized ? taskPivot : taskPageRows
+              return (
+                <>
+                  {!maximized && (
+                    <div className="flex items-center justify-end gap-2 text-xs dark:text-white/50 text-brand-500 mb-3">
+                      <button
+                        onClick={() => goToTaskPage(taskPage - 1)}
+                        disabled={taskPage === 0}
+                        className="px-2 py-1 rounded-lg dark:bg-white/10 bg-brand-100 disabled:opacity-30"
+                      >
+                        ‹ Prev
+                      </button>
+                      <span>Page {taskPage + 1} of {taskTotalPages}</span>
+                      <button
+                        onClick={() => goToTaskPage(taskPage + 1)}
+                        disabled={taskPage >= taskTotalPages - 1}
+                        className="px-2 py-1 rounded-lg dark:bg-white/10 bg-brand-100 disabled:opacity-30"
+                      >
+                        Next ›
+                      </button>
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b dark:border-white/10 border-brand-200">
+                          {['Task Name', 'Assignee', 'Created', 'Start', 'End (Due)', 'Closed', 'Overdue Days'].map(hd => (
+                            <th key={hd} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
+                                                   dark:text-white/50 text-brand-500 whitespace-nowrap">
+                              {hd}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((t, i) => (
+                          <tr
+                            key={t.taskId + i}
+                            className={`border-b dark:border-white/5 border-brand-100
+                              ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}
+                          >
+                            <td className="py-2 px-3 font-medium dark:text-white text-brand-900 max-w-[240px]">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className="truncate" title={t.taskName}>{t.taskName || '—'}</span>
+                                <TeamworkLink taskId={t.taskId} />
+                              </div>
+                            </td>
+                            <td className="py-2 px-3 dark:text-white/70 text-brand-600 max-w-[200px] truncate">{t.assignee || '—'}</td>
+                            <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.createdDate || '—'}</td>
+                            <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.startDate || '—'}</td>
+                            <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.endDate || '—'}</td>
+                            <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{t.closedDate || '—'}</td>
+                            <td className="py-2 px-3">
+                              {t.overdueDays === null ? (
+                                <span className="dark:text-white/30 text-brand-300">—</span>
+                              ) : t.overdueDays > 0 ? (
+                                <span className="font-semibold" style={{ color: '#6858a2' }}>{t.overdueDays}d</span>
+                              ) : (
+                                <span className="dark:text-white/50 text-brand-500">0d</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )
+            }}
+          </MaximizableChartCard>
         </>
       )}
 
       <PeriodDrillDownModal drillDown={periodDrillDown} onClose={() => setPeriodDrillDown(null)} />
+      <EmployeeTasksModal drillDown={employeeTasksDrillDown} onClose={() => setEmployeeTasksDrillDown(null)} />
+      <TagEmployeesModal drillDown={tagEmployeesDrillDown} onClose={() => setTagEmployeesDrillDown(null)} />
     </div>
   )
 }

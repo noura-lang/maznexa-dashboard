@@ -25,6 +25,28 @@
 }
 
 @layer components {
+  /* ── Brand type scale (Poppins) ──────────────────────────────────────────
+     Named after the brand guide's levels. The guide's px values (25/20/14/
+     9/7/5) are print/Figma reference points — applied literally, Body Text
+     02/01 and Minor text would be illegibly small on screen, so sizes here
+     are scaled up to stay readable while preserving the guide's *relative*
+     scale and, more importantly, its weight assignments (Semi Bold for
+     titles, Medium for subheadings, Regular for body, Light for minor
+     text) — most of the app's existing sizes were already close to right;
+     several weights were not (e.g. table headers were font-semibold, not
+     the guide's Medium) and got corrected app-wide alongside these classes.
+     Not every element in the app has been switched to use these classes by
+     name — the underlying Tailwind utility combinations they document
+     (font-semibold/font-medium/font-light + a size) are already applied
+     directly at most call sites; these exist for new/updated code to reach
+     for instead of re-deriving the combination each time. */
+  .text-title-04 { @apply font-semibold text-2xl sm:text-3xl; }         /* page-level headings (Greeting) */
+  .text-title-03 { @apply font-semibold text-sm; }                       /* chart/card titles */
+  .text-title-02 { @apply font-medium text-xs uppercase tracking-wider; } /* subheadings, table column labels */
+  .text-body-02  { @apply font-normal text-sm; }                         /* body copy, table numbers */
+  .text-body-01  { @apply font-light text-xs; }                         /* secondary labels */
+  .text-minor    { @apply font-light text-[10px]; }                     /* smallest incidental notes */
+
   .card {
     @apply rounded-2xl border border-white/10 backdrop-blur-sm;
   }
@@ -35,22 +57,6 @@
 
   .card {
     @apply bg-white/60;
-  }
-
-  .tab-btn {
-    @apply px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 whitespace-nowrap;
-  }
-
-  .tab-btn.active {
-    @apply bg-brand-600 text-white shadow-lg shadow-brand-900/40;
-  }
-
-  .dark .tab-btn:not(.active) {
-    @apply text-white/60 hover:text-white hover:bg-white/10;
-  }
-
-  .tab-btn:not(.active) {
-    @apply text-brand-800 hover:text-brand-900 hover:bg-brand-100;
   }
 
   /* Scrollbar styling */
@@ -102,4 +108,30 @@
 
 .animate-toast-in {
   animation: toast-in 0.2s ease-out;
+}
+
+/* Weekly Report tab — Dark Mode depth trial (scoped via .weekly-report-tab,
+   not the base .card rule) so Billable/Hours/Comparison keep today's flat
+   dark-mode card look until/unless this rolls out further. Brand purple
+   family only (brand-700/900/950 + the existing #9354ff accent already used
+   for chart titles/trend lines) — no new hues introduced. */
+.dark .weekly-report-tab .card {
+  background-image: linear-gradient(160deg, rgba(61, 43, 122, 0.35) 0%, rgba(15, 8, 36, 0.35) 100%);
+  box-shadow:
+    0 10px 30px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(147, 84, 255, 0.06),
+    0 4px 16px -4px rgba(147, 84, 255, 0.12);
+}
+
+/* Per-bar soft shadow (not one shadow for the whole chart silhouette) —
+   each <Bar>'s rendered <path>/<rect> gets its own elevation. Bar fills
+   themselves already switch to a lighter-top/darker-bottom gradient via
+   barFill()/<BarDepthDefs/> in WeeklyReport.jsx when Dark Mode is on. */
+.dark .weekly-report-tab .recharts-bar-rectangle path,
+.dark .weekly-report-tab .recharts-bar-rectangle rect {
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.35));
+}
+
+.dark .weekly-report-tab .recharts-wrapper {
+  filter: drop-shadow(0 4px 14px rgba(147, 84, 255, 0.1));
 }

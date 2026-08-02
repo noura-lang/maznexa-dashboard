@@ -1,10 +1,11 @@
-// Small confirmation/error toast for the Refresh action — bottom-right,
-// brand-colored, auto-dismisses (Header owns the timer) or closes on click.
-export default function Toast({ type = 'success', onClose }) {
+// Small confirmation/error toast — bottom-right, brand-colored, auto-dismisses
+// (the caller owns the timer) or closes on click. Defaults to the Refresh
+// action's wording; pass `messages` to reuse it for another action (e.g. PDF export).
+export default function Toast({ type = 'success', messages: messagesProp, onClose }) {
   const isSuccess = type === 'success'
-  const messages = isSuccess
+  const messages = messagesProp || (isSuccess
     ? { en: 'Data refreshed successfully', ar: 'تم التحديث بنجاح' }
-    : { en: 'Failed to refresh — please try again', ar: 'فشل التحديث، حاول مرة أخرى' }
+    : { en: 'Failed to refresh — please try again', ar: 'فشل التحديث، حاول مرة أخرى' })
 
   return (
     <div

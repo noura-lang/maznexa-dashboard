@@ -5,11 +5,16 @@ import {
   filterCapacityByMonth, filterCapacityByQuarter, filterCapacityYTD, calcYearlyComparison, calcQuarterlyComparison,
   calcMonthlyUtilizationTrend, calcTeamUtilizationSummary, calcCapacitySummary,
   calcComparisonByTeam, calcComparisonByEmployee, calcCapacityByEmployee, calcGrowthPct, utilizationColor,
-  getUniqueCapacityTeams, getUniqueCapacityEmployees,
+  getUniqueCapacityTeams, getUniqueCapacityEmployees, getActiveEmployeeNames,
   filterTimeLogByMonth, filterTimeLogByQuarter, calcHoursByProject,
 } from '../api/transformData'
 import MultiSelect from '../components/common/MultiSelect'
 import LoadingSpinner from '../components/common/LoadingSpinner'
+import Greeting from '../components/common/Greeting'
+import ChartTitleBadge from '../components/common/ChartTitleBadge'
+import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import { useAuth } from '../context/AuthContext'
+import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, Cell, LabelList, PieChart, Pie,
@@ -19,6 +24,7 @@ import {
 const COLOR_2025 = '#6858a2' // primary purple
 const COLOR_2026 = '#8c8ffe' // secondary blue
 const GROWTH_COLOR = '#3d2b7a' // darkest purple, for the growth-% line
+const EMP_COUNT_COLOR = '#e6b800' // gold, distinct from the utilization bars/growth line sharing this chart
 
 const fmtHours = v => Number(v ?? 0).toFixed(2)
 const fmtPct   = v => Math.round(Number(v ?? 0)).toString()
@@ -101,6 +107,10 @@ function PercentTooltip({ active, payload, label }) {
   )
 }
 
+// Team-by-Month combo chart's tooltip — every series is a percentage
+// (Utilization % bars, Growth % line) except the Employee Count bar, which
+// is a plain headcount; unlike HoursTooltip/PercentTooltip it isn't reused
+// elsewhere.
 function ComboTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   return (
@@ -110,9 +120,7 @@ function ComboTooltip({ active, payload, label }) {
       <p className="font-semibold mb-2 max-w-[180px] truncate">{label}</p>
       {payload.map(p => (
         <p key={p.dataKey} className="text-xs" style={{ color: p.fill || p.stroke || p.color }}>
-          {p.name}: <span className="font-bold">
-            {p.dataKey === 'growthPct' ? `${fmtPct(p.value)}%` : `${fmtHours(p.value)} hrs`}
-          </span>
+          {p.name}: <span className="font-bold">{p.dataKey === 'empCount2026' ? p.value : `${fmtPct(p.value)}%`}</span>
         </p>
       ))}
     </div>
@@ -176,27 +184,33 @@ function UtilDonut({ label, value, color }) {
 function CompareBarChart({ data, dataKeyPrefix, xKey, unit, height = 220, onBarClick }) {
   const key2025 = `${dataKeyPrefix}2025`
   const key2026 = `${dataKeyPrefix}2026`
-  const formatter = unit === '%' ? (v => `${fmtPct(v)}%`) : (v => fmtHours(v))
+  // On-bar labels are rounded to whole numbers here (not fmtHours' 2-decimal
+  // form) purely for legibility — the tooltip still shows full precision.
+  // Long decimal strings ("245.32") were the main cause of adjacent-bar
+  // label collisions on categories with many months (Month Comparison, up
+  // to 12 side-by-side pairs); the smaller font + wider bar gap below cover
+  // the rest of it.
+  const labelFormatter = unit === '%' ? (v => `${fmtPct(v)}%`) : (v => Math.round(v).toLocaleString())
   const tooltip = unit === '%' ? <PercentTooltip /> : <HoursTooltip />
   const barCursor = onBarClick ? { cursor: 'pointer' } : {}
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <BarChart data={data} margin={{ top: 32, bottom: 8 }}>
+      <BarChart data={data} margin={{ top: 32, bottom: 8 }} barGap={6} barCategoryGap="18%">
         <XAxis dataKey={xKey} tick={{ fill: 'currentColor', fontSize: 11 }} />
         <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={unit === '%' ? (v => `${Math.round(v)}%`) : fmtHours} />
         <Tooltip content={tooltip} />
         <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 8, fontSize: '12px' }} />
         <Bar dataKey={key2025} name="2025" fill={COLOR_2025} radius={[4, 4, 0, 0]}
           onClick={onBarClick ? () => onBarClick(2025) : undefined} {...barCursor}>
-          <LabelList dataKey={key2025} position="top" formatter={formatter} style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
+          <LabelList dataKey={key2025} position="top" formatter={labelFormatter} style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
         </Bar>
         <Bar dataKey={key2026} name="2026" fill={COLOR_2026} radius={[4, 4, 0, 0]}
           onClick={onBarClick ? () => onBarClick(2026) : undefined} {...barCursor}>
           {data.map((d, i) => (
             <Cell key={i} fill={COLOR_2026} fillOpacity={d.status === 'partial' ? 0.4 : 1} />
           ))}
-          <LabelList dataKey={key2026} position="top" formatter={formatter} style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
+          <LabelList dataKey={key2026} position="top" formatter={labelFormatter} style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -207,14 +221,37 @@ function CompareBarChart({ data, dataKeyPrefix, xKey, unit, height = 220, onBarC
 // with growth% / headcount shown as badges (never mixed onto a bar axis).
 // `onBarClick(year)` is optional — only the Year section wires it up, to open
 // a drill-down of exactly the employee rows that were summed into that bar.
-function ComparisonSection({ title, data, xKey, growthPct, empCount2025, empCount2026, onBarClick }) {
+function ComparisonSection({
+  title, data, xKey, growthPct, empCount2025, empCount2026,
+  traineeCount2025, traineeCount2026, onBarClick,
+}) {
+  const periodColumn = { key: xKey, label: 'Period' }
+  const hoursColumns = [
+    periodColumn,
+    { key: 'hours2025', label: 'Hours 2025', format: fmtHours },
+    { key: 'hours2026', label: 'Hours 2026', format: fmtHours },
+  ]
+  const utilColumns = [
+    periodColumn,
+    { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
+    { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
+  ]
   return (
     <div className="card p-5">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h3 className="text-sm font-semibold dark:text-white/80 text-brand-800">{title}</h3>
-        <div className="flex items-center gap-3 text-xs dark:text-white/60 text-brand-600">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-start gap-2 mb-4">
+        <div />
+        <h3 className="justify-self-center">
+          <ChartTitleBadge>{title}</ChartTitleBadge>
+        </h3>
+        <div className="justify-self-end flex items-center gap-3 flex-wrap text-xs dark:text-white/60 text-brand-600">
           {empCount2025 !== undefined && (
             <span>Employees: <b style={{ color: COLOR_2025 }}>{empCount2025}</b> → <b style={{ color: COLOR_2026 }}>{empCount2026}</b></span>
+          )}
+          {traineeCount2025 !== undefined && (
+            <span className="flex items-center gap-1">
+              Trainees: <b style={{ color: COLOR_2025 }}>{traineeCount2025}</b> → <b style={{ color: COLOR_2026 }}>{traineeCount2026}</b>
+              {traineeCount2025 > 0 && <DeltaBadge delta={calcGrowthPct(traineeCount2025, traineeCount2026)} />}
+            </span>
           )}
           {growthPct !== undefined && (
             <span className="flex items-center gap-1">Growth <DeltaBadge delta={growthPct} /></span>
@@ -222,19 +259,17 @@ function ComparisonSection({ title, data, xKey, growthPct, empCount2025, empCoun
         </div>
       </div>
       {onBarClick && (
-        <p className="text-xs dark:text-white/40 text-brand-400 -mt-2 mb-4">
+        <p className="text-xs font-light dark:text-white/40 text-brand-400 -mt-2 mb-4">
           Click a bar to see the employee-level breakdown behind it.
         </p>
       )}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div>
-          <p className="text-xs font-medium mb-2 dark:text-white/50 text-brand-500">Hours</p>
-          <CompareBarChart data={data} dataKeyPrefix="hours" xKey={xKey} unit="hrs" onBarClick={onBarClick} />
-        </div>
-        <div>
-          <p className="text-xs font-medium mb-2 dark:text-white/50 text-brand-500">Utilization %</p>
-          <CompareBarChart data={data} dataKeyPrefix="util" xKey={xKey} unit="%" onBarClick={onBarClick} />
-        </div>
+        <MaximizableChartCard title="Hours" height={220} modalHeight={420} exportRows={data} exportColumns={hoursColumns}>
+          {h => <CompareBarChart data={data} dataKeyPrefix="hours" xKey={xKey} unit="hrs" onBarClick={onBarClick} height={h} />}
+        </MaximizableChartCard>
+        <MaximizableChartCard title="Utilization %" height={220} modalHeight={420} exportRows={data} exportColumns={utilColumns}>
+          {h => <CompareBarChart data={data} dataKeyPrefix="util" xKey={xKey} unit="%" onBarClick={onBarClick} height={h} />}
+        </MaximizableChartCard>
       </div>
     </div>
   )
@@ -311,7 +346,7 @@ function DrillDownModal({ drillDown, data, onClose }) {
               <thead>
                 <tr className="border-b dark:border-white/10 border-brand-200">
                   {['Project', 'Client', 'Hours'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                            dark:text-white/50 text-brand-500 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -332,7 +367,7 @@ function DrillDownModal({ drillDown, data, onClose }) {
               <thead>
                 <tr className="border-b dark:border-white/10 border-brand-200">
                   {['Employee', 'Team', 'Hours', 'Capacity', 'Utilization'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                            dark:text-white/50 text-brand-500 whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -357,10 +392,71 @@ function DrillDownModal({ drillDown, data, onClose }) {
   )
 }
 
+// Employees-column drill-down for the Team Utilization Comparison by Month
+// table (and its Grand Summary row) — a plain name list, distinct from
+// DrillDownModal's per-employee hours/capacity/util breakdown since there's
+// no metric to show here beyond "who counted toward this number".
+function TeamEmployeesModal({ drillDown, onClose }) {
+  if (!drillDown) return null
+  const { team, year, names } = drillDown
+  const color = year === 2025 ? COLOR_2025 : COLOR_2026
+  const heading = team === 'Grand Summary' ? 'All Teams' : `${team} Team`
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl
+                   dark:bg-brand-900 bg-white border dark:border-white/10 border-brand-200"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-brand-200">
+          <h3 className="text-sm font-semibold dark:text-white text-brand-900">
+            {heading} — <span style={{ color }}>{year}</span>{' '}
+            <span className="font-normal dark:text-white/50 text-brand-500">
+              ({names.length} employee{names.length === 1 ? '' : 's'})
+            </span>
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-lg leading-none px-2 dark:text-white/50 text-brand-400
+                       hover:dark:text-white hover:text-brand-800"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4">
+          {names.length === 0 ? (
+            <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
+              No employees found for this period.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {names.map((name, i) => (
+                <li key={name} className={`px-3 py-2 rounded-lg text-sm font-medium dark:text-white text-brand-900
+                  ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
+                  {name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ComparisonTab() {
   const { data: cap2025 = [], isLoading: l1, error: e1 } = useCapacity2025()
   const { data: cap2026 = [], isLoading: l2, error: e2 } = useCapacity2026()
   const { data: rawTimeLog = [] } = useRawTimeLog()
+  const { employee, permissions: rawPermissions } = useAuth()
+  const permissions = rawPermissions || DEFAULT_DENIED_PERMISSIONS
+  const dataScope = permissions.dataScope
+  const scopeLocksTeam     = dataScope === DATA_SCOPES.MY_TEAM || dataScope === DATA_SCOPES.MY_DATA
+  const scopeLocksEmployee = dataScope === DATA_SCOPES.MY_DATA
 
   // ── Page-level filters (independent of the app's global date filter) ──
   const [selectedDate, setSelectedDate]     = useState('all')
@@ -389,6 +485,20 @@ export default function ComparisonTab() {
       initialized.current = true
     }
   }, [teamOptions, allCapRows])
+
+  // Data Scope enforcement — same override pattern as FilterBar.jsx, applied
+  // here too since this tab keeps its own independent Team/Employee filter
+  // state instead of the global FilterContext one.
+  useEffect(() => {
+    if (!employee) return
+    if (dataScope === DATA_SCOPES.MY_DATA) {
+      setSelectedTeams(employee.team ? [employee.team] : teamOptions)
+      setSelectedEmployees(employee.name ? [employee.name] : [])
+    } else if (dataScope === DATA_SCOPES.MY_TEAM && employee.team) {
+      setSelectedTeams([employee.team])
+      setSelectedEmployees(getUniqueCapacityEmployees(allCapRows, [employee.team]))
+    }
+  }, [dataScope, employee, allCapRows, teamOptions])
 
   const EXCLUDED_TEAMS = ['trainees', 'owner']
   function applyTeamEmp(rows) {
@@ -437,6 +547,19 @@ export default function ComparisonTab() {
   // cap2025All/cap2026All instead is what caused the same month to show two
   // different totals depending on which chart rendered it.
   const yearly    = useMemo(() => calcYearlyComparison(cap2025YTD, cap2026YTD), [cap2025YTD, cap2026YTD])
+  // Trainee headcount for the "Comparison of Utilization by Year" chart —
+  // same cap2025YTD/cap2026YTD scope as `yearly` above (so it respects the
+  // Team/Employee/Month filters and the Exclude Trainees & Owner toggle the
+  // same way the Employees badge next to it does), narrowed to the
+  // "Trainees" team only.
+  const traineeCount2025 = useMemo(
+    () => calcCapacitySummary(cap2025YTD.filter(r => (r.Team || '').trim().toLowerCase() === 'trainees')).empCount,
+    [cap2025YTD]
+  )
+  const traineeCount2026 = useMemo(
+    () => calcCapacitySummary(cap2026YTD.filter(r => (r.Team || '').trim().toLowerCase() === 'trainees')).empCount,
+    [cap2026YTD]
+  )
   const quarterly = useMemo(() => calcQuarterlyComparison(cap2025YTD, cap2026YTD), [cap2025YTD, cap2026YTD])
   const quarterlyAnnotated = useMemo(() => quarterly
     .map((q, i) => {
@@ -514,6 +637,11 @@ export default function ComparisonTab() {
   const teamByMonth     = useMemo(() => calcComparisonByTeam(cap2025Month, cap2026Month),     [cap2025Month, cap2026Month])
   const employeeByMonth = useMemo(() => calcComparisonByEmployee(cap2025Month, cap2026Month), [cap2025Month, cap2026Month])
 
+  const monthlyComparedExport = useMemo(
+    () => monthlyCompared.map(row => ({ ...row, monthLabel: MONTH_FULL[row.month - 1] })),
+    [monthlyCompared]
+  )
+
   const grandSummary = useMemo(() => {
     const s2025 = calcCapacitySummary(cap2025Month)
     const s2026 = calcCapacitySummary(cap2026Month)
@@ -542,6 +670,20 @@ export default function ComparisonTab() {
     }
   }, [tableTeamOptions])
 
+  // Data Scope enforcement for this table's own sub-filters too.
+  useEffect(() => {
+    if (!employee) return
+    const monthCapRows = [...cap2025Month, ...cap2026Month]
+    if (dataScope === DATA_SCOPES.MY_DATA) {
+      setTableTeams(employee.team ? [employee.team] : tableTeamOptions)
+      setTableEmployees(employee.name ? [employee.name] : [])
+    } else if (dataScope === DATA_SCOPES.MY_TEAM && employee.team) {
+      setTableTeams([employee.team])
+      setTableEmployees(getUniqueCapacityEmployees(monthCapRows, [employee.team]))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataScope, employee, cap2025Month, cap2026Month, tableTeamOptions])
+
   const employeeTableRows = useMemo(
     () => employeeByMonth.filter(row =>
       (tableTeams.length === 0 || tableTeams.includes(row.team)) &&
@@ -549,6 +691,8 @@ export default function ComparisonTab() {
     ),
     [employeeByMonth, tableTeams, tableEmployees]
   )
+
+  const teamByMonthExport = useMemo(() => [...teamByMonth, grandSummary], [teamByMonth, grandSummary])
 
   // ── Drill-down: clicking an Employees/Hours/Capacity cell in the Quarterly
   // or Monthly table opens a modal scoped to that exact year + period, using
@@ -592,6 +736,18 @@ export default function ComparisonTab() {
     return { metric, rows }
   }, [drillDown, cap2025YTD, cap2026YTD, timeLogFiltered])
 
+  // ── Employees-column drill-down for the "Team Utilization Comparison by
+  // Month" table (and its Grand Summary row) — sourced from the exact same
+  // cap2025Month/cap2026Month rows calcComparisonByTeam/calcCapacitySummary
+  // summed to produce that cell's count, so the modal's name list always
+  // reconciles with the number clicked.
+  const [teamEmpDrillDown, setTeamEmpDrillDown] = useState(null) // { team, year, names } | null
+  function openTeamEmpDrillDown(team, year) {
+    const rows = year === 2025 ? cap2025Month : cap2026Month
+    const scoped = team === 'Grand Summary' ? rows : rows.filter(r => r.Team === team)
+    setTeamEmpDrillDown({ team, year, names: getActiveEmployeeNames(scoped) })
+  }
+
   function resetAll() {
     setSelectedDate('all')
     setSelectedMonth(new Date().getMonth() + 1)
@@ -613,8 +769,13 @@ export default function ComparisonTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* Filters */}
-      <div className="card p-4 flex flex-wrap items-center gap-3 relative z-50">
+      <Greeting />
+
+      {/* Filters — Comparison doesn't render the shared <FilterBar/> (App.jsx
+          skips it for this tab), so this is its equivalent "main filter bar".
+          Sticky at top-0 like FilterBar itself — Header is normal (non-sticky)
+          flow content now, so this is the first thing that pins on scroll. */}
+      <div className="card p-4 flex flex-wrap items-center gap-3 sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Date</label>
           <select value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="filter-input">
@@ -637,11 +798,11 @@ export default function ComparisonTab() {
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Team</label>
           <MultiSelect options={teamOptions} value={selectedTeams}
             onChange={val => { setSelectedTeams(val); setSelectedEmployees(getUniqueCapacityEmployees(allCapRows, val)) }}
-            placeholder="All Teams" />
+            placeholder="All Teams" disabled={scopeLocksTeam} />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Employee</label>
-          <MultiSelect options={employeeOptions} value={selectedEmployees} onChange={setSelectedEmployees} placeholder="All Employees" />
+          <MultiSelect options={employeeOptions} value={selectedEmployees} onChange={setSelectedEmployees} placeholder="All Employees" disabled={scopeLocksEmployee} />
         </div>
         <label className="flex items-center gap-2 text-xs dark:text-white/60 text-brand-600 font-medium cursor-pointer select-none">
           <input
@@ -661,14 +822,14 @@ export default function ComparisonTab() {
           ↺ Reset
         </button>
       </div>
-      <p className="text-xs dark:text-white/40 text-brand-400 -mt-3">
+      <p className="text-xs font-light dark:text-white/40 text-brand-400 -mt-3">
         Date narrows the current-year (2026) view within the selected Month; 2025 data is stored monthly so it always reflects the full month.
       </p>
 
       {/* Donuts */}
       <div className="card p-5">
-        <h3 className="text-sm font-semibold mb-2 dark:text-white/80 text-brand-800">
-          Utilization — {monthName}
+        <h3 className="mb-2 flex justify-center">
+          <ChartTitleBadge>Utilization — {monthName}</ChartTitleBadge>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <UtilDonut label={`Utilization ${monthName} 2025`} value={monthSummary2025.util} color={COLOR_2025} />
@@ -720,6 +881,8 @@ export default function ComparisonTab() {
         growthPct={yearly.growthPct}
         empCount2025={yearly.empCount2025}
         empCount2026={yearly.empCount2026}
+        traineeCount2025={traineeCount2025}
+        traineeCount2026={traineeCount2026}
         onBarClick={year => openDrillDown('detail', year, 'year', null, yearRangeLabel)}
       />
 
@@ -730,17 +893,30 @@ export default function ComparisonTab() {
       />
 
       {/* Quarterly table — same columns as the Team table, grouped by Quarter */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
-          Quarterly Comparison for 2025 vs 2026
-        </h3>
+      <MaximizableChartCard
+        title="Quarterly Comparison for 2025 vs 2026"
+        exportRows={quarterlyFiltered}
+        exportColumns={[
+          { key: 'quarter', label: 'Quarter' },
+          { key: 'empCount2025', label: 'Employees 2025' },
+          { key: 'hours2025', label: 'Hours 2025', format: fmtHours },
+          { key: 'capacity2025', label: 'Capacity 2025', format: fmtHours },
+          { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
+          { key: 'empCount2026', label: 'Employees 2026' },
+          { key: 'hours2026', label: 'Hours 2026', format: fmtHours },
+          { key: 'capacity2026', label: 'Capacity 2026', format: fmtHours },
+          { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
+          { key: 'growthPct', label: 'Growth %', format: fmtPct },
+        ]}
+      >
+        {() => (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b dark:border-white/10 border-brand-200">
                 {['Quarter', 'Employees 2025', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
                   'Employees 2026', 'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                          dark:text-white/50 text-brand-500 whitespace-nowrap">
                     {h}
                   </th>
@@ -771,7 +947,8 @@ export default function ComparisonTab() {
             </tbody>
           </table>
         </div>
-      </div>
+        )}
+      </MaximizableChartCard>
 
       {/* Monthly Comparison Table — same shape as the Quarterly table above,
           one row per month from Jan through the selected Month filter. */}
@@ -783,17 +960,30 @@ export default function ComparisonTab() {
           <NoDataYet monthName={monthName} lastDataMonthName={MONTH_FULL[lastDataMonth - 1]} />
         </div>
       ) : (
-        <div className="card p-5">
-          <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
-            Monthly Comparison Table for 2025 vs 2026 — Jan - {monthName}
-          </h3>
+        <MaximizableChartCard
+          title={`Monthly Comparison Table for 2025 vs 2026 — Jan - ${monthName}`}
+          exportRows={monthlyComparedExport}
+          exportColumns={[
+            { key: 'monthLabel', label: 'Month' },
+            { key: 'empCount2025', label: 'Employees 2025' },
+            { key: 'hours2025', label: 'Hours 2025', format: fmtHours },
+            { key: 'capacity2025', label: 'Capacity 2025', format: fmtHours },
+            { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
+            { key: 'empCount2026', label: 'Employees 2026' },
+            { key: 'hours2026', label: 'Hours 2026', format: fmtHours },
+            { key: 'capacity2026', label: 'Capacity 2026', format: fmtHours },
+            { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
+            { key: 'growthPct', label: 'Growth %', format: fmtPct },
+          ]}
+        >
+          {() => (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b dark:border-white/10 border-brand-200">
                   {['Month', 'Employees 2025', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
                     'Employees 2026', 'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                            dark:text-white/50 text-brand-500 whitespace-nowrap">
                       {h}
                     </th>
@@ -824,7 +1014,8 @@ export default function ComparisonTab() {
               </tbody>
             </table>
           </div>
-        </div>
+          )}
+        </MaximizableChartCard>
       )}
 
       {isMonthFuture ? (
@@ -856,42 +1047,90 @@ export default function ComparisonTab() {
           ⏳ {monthName} 2026 is still in progress — figures below reflect data through {lastDataDate}.
         </p>
       )}
-      {/* Team combo chart — deliberate dual-axis exception (bars = hours, line = growth %) */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold mb-1 dark:text-white/80 text-brand-800">
-          Team Utilization Comparison by Month — {monthName}
-        </h3>
-        <p className="text-xs dark:text-white/40 text-brand-400 mb-4">
-          Bars (left axis) = hours logged. Line (right axis) = utilization growth %.
-        </p>
-        <ResponsiveContainer width="100%" height={Math.max(320, teamByMonth.length * 8) + 60}>
-          <ComposedChart data={teamByMonth} margin={{ top: 32, bottom: 60 }}>
-            <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" height={70} interval={0} />
-            <YAxis yAxisId="left" tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours}
-              label={{ value: 'Hours', angle: -90, position: 'insideLeft', fill: 'currentColor', fontSize: 11 }} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fill: GROWTH_COLOR, fontSize: 11 }} tickFormatter={v => `${Math.round(v)}%`}
-              label={{ value: 'Growth %', angle: 90, position: 'insideRight', fill: GROWTH_COLOR, fontSize: 11 }} />
-            <Tooltip content={<ComboTooltip />} />
-            <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-            <Bar yAxisId="left" dataKey="hours2025" name="Hours 2025" fill={COLOR_2025} radius={[3, 3, 0, 0]} />
-            <Bar yAxisId="left" dataKey="hours2026" name="Hours 2026" fill={COLOR_2026} radius={[3, 3, 0, 0]} />
-            <Line yAxisId="right" type="monotone" dataKey="delta" name="Growth %" stroke={GROWTH_COLOR} strokeWidth={2} dot={{ r: 3, fill: GROWTH_COLOR }} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
+      {/* Team combo chart — bars = utilization % (left axis) + employee
+          count (own hidden axis, own scale), line = growth % (right axis).
+          Employee Count bars are clickable, same as the table's Employees
+          column below — opens the same drill-down modal. */}
+      <MaximizableChartCard
+        title={`Team Utilization Comparison by Month — ${monthName}`}
+        height={Math.max(320, teamByMonth.length * 8) + 60}
+        modalHeight={Math.max(420, teamByMonth.length * 10) + 100}
+        exportRows={teamByMonth}
+        exportColumns={[
+          { key: 'team', label: 'Team' },
+          { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
+          { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
+          { key: 'empCount2026', label: 'Employee Count' },
+          { key: 'delta', label: 'Growth %', format: fmtPct },
+        ]}
+      >
+        {h => (
+          <>
+            <p className="text-xs font-light dark:text-white/40 text-brand-400 mb-4 text-center">
+              Bars = utilization % and employee count. Line (right axis) = utilization growth %. Click an Employee Count bar to see who's counted in it.
+            </p>
+            <ResponsiveContainer width="100%" height={h}>
+              <ComposedChart data={teamByMonth} margin={{ top: 32, bottom: 60 }}>
+                <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" height={70} interval={0} />
+                <YAxis yAxisId="left" domain={[0, 100]} tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => `${Math.round(v)}%`}
+                  label={{ value: 'Utilization %', angle: -90, position: 'insideLeft', fill: 'currentColor', fontSize: 11 }} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fill: GROWTH_COLOR, fontSize: 11 }} tickFormatter={v => `${Math.round(v)}%`}
+                  label={{ value: 'Growth %', angle: 90, position: 'insideRight', fill: GROWTH_COLOR, fontSize: 11 }} />
+                <YAxis yAxisId="count" hide allowDecimals={false} />
+                <Tooltip content={<ComboTooltip />} />
+                <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
+                <Bar yAxisId="left" dataKey="util2025" name="Utilization % 2025" fill={COLOR_2025} radius={[3, 3, 0, 0]}>
+                  <LabelList dataKey="util2025" position="top" formatter={v => `${fmtPct(v)}%`}
+                    style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                </Bar>
+                <Bar yAxisId="left" dataKey="util2026" name="Utilization % 2026" fill={COLOR_2026} radius={[3, 3, 0, 0]}>
+                  <LabelList dataKey="util2026" position="top" formatter={v => `${fmtPct(v)}%`}
+                    style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                </Bar>
+                <Bar
+                  yAxisId="count"
+                  dataKey="empCount2026"
+                  name="Employee Count"
+                  fill={EMP_COUNT_COLOR}
+                  radius={[3, 3, 0, 0]}
+                  onClick={entry => openTeamEmpDrillDown(entry.team, 2026)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <LabelList dataKey="empCount2026" position="top"
+                    style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                </Bar>
+                <Line yAxisId="right" type="monotone" dataKey="delta" name="Growth %" stroke={GROWTH_COLOR} strokeWidth={2} dot={{ r: 3, fill: GROWTH_COLOR }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </>
+        )}
+      </MaximizableChartCard>
 
       {/* Table (a): Team Utilization Comparison by Month */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
-          Team Utilization Comparison by Month — {monthName}
-        </h3>
+      <MaximizableChartCard
+        title={`Team Utilization Comparison by Month — ${monthName}`}
+        exportRows={teamByMonthExport}
+        exportColumns={[
+          { key: 'team', label: 'Team' },
+          { key: 'empCount2025', label: 'Employees 2025' },
+          { key: 'hours2025', label: 'Hours 2025', format: fmtHours },
+          { key: 'capacity2025', label: 'Capacity 2025', format: fmtHours },
+          { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
+          { key: 'empCount2026', label: 'Employees 2026' },
+          { key: 'hours2026', label: 'Hours 2026', format: fmtHours },
+          { key: 'capacity2026', label: 'Capacity 2026', format: fmtHours },
+          { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
+          { key: 'delta', label: 'Growth %', format: fmtPct },
+        ]}
+      >
+        {() => (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b dark:border-white/10 border-brand-200">
                 {['Team', 'Employees 2025', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
                   'Employees 2026', 'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                          dark:text-white/50 text-brand-500 whitespace-nowrap">
                     {h}
                   </th>
@@ -903,11 +1142,11 @@ export default function ComparisonTab() {
                 <tr key={row.team} className={`border-b dark:border-white/5 border-brand-100
                   ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
                   <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{row.team}</td>
-                  <td className="py-2 px-3 dark:text-white/70 text-brand-600">{row.empCount2025}</td>
+                  <DrillCell onClick={() => openTeamEmpDrillDown(row.team, 2025)}>{row.empCount2025}</DrillCell>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.hours2025)}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.capacity2025)}</td>
                   <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2025 }}>{fmtPct(row.util2025)}%</td>
-                  <td className="py-2 px-3 dark:text-white/70 text-brand-600">{row.empCount2026}</td>
+                  <DrillCell onClick={() => openTeamEmpDrillDown(row.team, 2026)}>{row.empCount2026}</DrillCell>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.hours2026)}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.capacity2026)}</td>
                   <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2026 }}>{fmtPct(row.util2026)}%</td>
@@ -916,11 +1155,11 @@ export default function ComparisonTab() {
               ))}
               <tr className="border-t-2 dark:border-white/20 border-brand-300 font-semibold">
                 <td className="py-2 px-3 dark:text-white text-brand-900">{grandSummary.team}</td>
-                <td className="py-2 px-3 dark:text-white/80 text-brand-700">{grandSummary.empCount2025}</td>
+                <DrillCell onClick={() => openTeamEmpDrillDown(grandSummary.team, 2025)}>{grandSummary.empCount2025}</DrillCell>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.hours2025)}</td>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.capacity2025)}</td>
                 <td className="py-2 px-3" style={{ color: COLOR_2025 }}>{fmtPct(grandSummary.util2025)}%</td>
-                <td className="py-2 px-3 dark:text-white/80 text-brand-700">{grandSummary.empCount2026}</td>
+                <DrillCell onClick={() => openTeamEmpDrillDown(grandSummary.team, 2026)}>{grandSummary.empCount2026}</DrillCell>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.hours2026)}</td>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.capacity2026)}</td>
                 <td className="py-2 px-3" style={{ color: COLOR_2026 }}>{fmtPct(grandSummary.util2026)}%</td>
@@ -929,38 +1168,53 @@ export default function ComparisonTab() {
             </tbody>
           </table>
         </div>
-      </div>
+        )}
+      </MaximizableChartCard>
 
       {/* Table (b): Employee Utilization Comparison by Month */}
-      <div className="card p-5">
-        <h3 className="text-sm font-semibold mb-4 dark:text-white/80 text-brand-800">
-          Employee Utilization Comparison by Month — {monthName}
-        </h3>
-
+      <MaximizableChartCard
+        title={`Employee Utilization Comparison by Month — ${monthName}`}
+        height={500}
+        modalHeight={750}
+        exportRows={employeeTableRows}
+        exportColumns={[
+          { key: 'team', label: 'Team' },
+          { key: 'name', label: 'Employee' },
+          { key: 'hours2025', label: 'Hours 2025', format: fmtHours },
+          { key: 'capacity2025', label: 'Capacity 2025', format: fmtHours },
+          { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
+          { key: 'hours2026', label: 'Hours 2026', format: fmtHours },
+          { key: 'capacity2026', label: 'Capacity 2026', format: fmtHours },
+          { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
+          { key: 'delta', label: 'Growth %', format: fmtPct },
+        ]}
+      >
+        {h => (
+        <>
         {/* Table-local sub-filters — independent of the page-level filters above */}
         <div className="flex flex-wrap items-center gap-3 mb-4 pb-4 border-b dark:border-white/10 border-brand-200">
-          <span className="text-xs font-semibold uppercase tracking-wider dark:text-white/50 text-brand-500">
+          <span className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Table filters
           </span>
           <div className="flex items-center gap-2">
             <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Team</label>
             <MultiSelect options={tableTeamOptions} value={tableTeams}
               onChange={val => { setTableTeams(val); setTableEmployees(getUniqueCapacityEmployees([...cap2025Month, ...cap2026Month], val)) }}
-              placeholder="All Teams" />
+              placeholder="All Teams" disabled={scopeLocksTeam} />
           </div>
           <div className="flex items-center gap-2">
             <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Employee</label>
-            <MultiSelect options={tableEmployeeOptions} value={tableEmployees} onChange={setTableEmployees} placeholder="All Employees" />
+            <MultiSelect options={tableEmployeeOptions} value={tableEmployees} onChange={setTableEmployees} placeholder="All Employees" disabled={scopeLocksEmployee} />
           </div>
         </div>
 
-        <div className="overflow-x-auto max-h-[500px]">
+        <div className="overflow-x-auto" style={{ maxHeight: h }}>
           <table className="w-full text-sm">
             <thead className="sticky top-0 dark:bg-brand-900 bg-white">
               <tr className="border-b dark:border-white/10 border-brand-200">
                 {['Team', 'Employee', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
                   'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wider
+                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
                                          dark:text-white/50 text-brand-500 whitespace-nowrap">
                     {h}
                   </th>
@@ -985,11 +1239,14 @@ export default function ComparisonTab() {
             </tbody>
           </table>
         </div>
-      </div>
+        </>
+        )}
+      </MaximizableChartCard>
       </>
       )}
 
       <DrillDownModal drillDown={drillDown} data={drillDownData} onClose={() => setDrillDown(null)} />
+      <TeamEmployeesModal drillDown={teamEmpDrillDown} onClose={() => setTeamEmpDrillDown(null)} />
     </div>
   )
 }
@@ -997,12 +1254,12 @@ export default function ComparisonTab() {
 function MinMaxCard({ title, maxLabel, maxValue, minLabel, minValue }) {
   return (
     <div className="card p-5">
-      <h3 className="text-xs font-semibold uppercase tracking-wider mb-4 dark:text-white/50 text-brand-500">
+      <h3 className="text-xs font-medium uppercase tracking-wider mb-4 dark:text-white/50 text-brand-500">
         {title}
       </h3>
       <div className="space-y-3">
         <div>
-          <p className="text-xs dark:text-white/40 text-brand-400">Highest</p>
+          <p className="text-xs font-light dark:text-white/40 text-brand-400">Highest</p>
           <div className="flex items-baseline justify-between">
             <span className="font-medium dark:text-white text-brand-900 truncate">{maxLabel}</span>
             <span className="font-bold text-lg" style={{ color: maxValue !== undefined ? utilizationColor(maxValue).bg : undefined }}>
@@ -1011,7 +1268,7 @@ function MinMaxCard({ title, maxLabel, maxValue, minLabel, minValue }) {
           </div>
         </div>
         <div>
-          <p className="text-xs dark:text-white/40 text-brand-400">Lowest</p>
+          <p className="text-xs font-light dark:text-white/40 text-brand-400">Lowest</p>
           <div className="flex items-baseline justify-between">
             <span className="font-medium dark:text-white text-brand-900 truncate">{minLabel}</span>
             <span className="font-bold text-lg" style={{ color: minValue !== undefined ? utilizationColor(minValue).bg : undefined }}>

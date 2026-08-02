@@ -136,12 +136,26 @@ export function getUniqueProjects(rows) {
 
 // ─── Weekly Report aggregations ──────────────────────────────────────────────
 
-export function calcOverallKPIs(timeLogRows, capacityRows) {
-  const totalLogged   = round2(sumHours(timeLogRows))
-  const totalCapacity = round2(
-    capacityRows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0)
-  )
-  const utilization = totalCapacity > 0 ? roundPct((totalLogged / totalCapacity) * 100) : 0
+// Single source of truth for every Utilization % computed on the Weekly
+// Report tab: Utilization % = (sum of Logged hrs) ÷ (sum of Available hrs) ×
+// 100, both read exclusively from the Capacity sheet. Every chart/widget
+// below funnels its logged/available pair through this one function instead
+// of inlining the ternary — so there is exactly one place this formula
+// lives for this tab. (Other tabs compute their own utilization inline and
+// are intentionally left untouched — this function is not shared with them,
+// even where their formula happens to look identical.)
+export function calculateUtilization(logged, available) {
+  return available > 0 ? roundPct((logged / available) * 100) : 0
+}
+
+// Both totalLogged and totalCapacity read exclusively from the Capacity
+// sheet (not Raw Time Log) — this is what lets "Overall Utilization" always
+// reconcile exactly with any period slice of the Weekly/Monthly Trend charts
+// below, since they all sum the same Logged (hrs)/Available (hrs) columns.
+export function calcOverallKPIs(capacityRows) {
+  const totalLogged   = round2(capacityRows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
+  const totalCapacity = round2(capacityRows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+  const utilization = calculateUtilization(totalLogged, totalCapacity)
 
   return { totalLogged, totalCapacity, utilization }
 }
@@ -158,30 +172,25 @@ export function calcUtilizationByTeam(capacityRows) {
     const rows     = capacityByTeam[team]
     const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
     const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
-    const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+    const utilPct  = calculateUtilization(logged, capacity)
     return { team, logged, capacity, utilPct }
   }).filter(t => !(t.logged === 0 && t.capacity === 0))
     .sort((a, b) => b.utilPct - a.utilPct)
 }
 
-export function calcUtilizationByEmployee(timeLogRows, capacityRows) {
-  const loggedByEmp   = groupBy(timeLogRows, 'WHO')
+// Both logged and capacity read exclusively from the Capacity sheet, grouped
+// by Name — same single-source rule as calcOverallKPIs/calcUtilizationByTeam
+// above (previously this merged in a separate Raw Time Log sum for "logged",
+// which could disagree with the Capacity sheet's own Logged (hrs) column).
+export function calcUtilizationByEmployee(capacityRows) {
   const capacityByEmp = groupBy(capacityRows, 'Name')
 
-  const employees = [...new Set([
-    ...Object.keys(loggedByEmp),
-    ...Object.keys(capacityByEmp),
-  ])]
-
-  return employees.map(name => {
-    const logged   = round2(sumHours(loggedByEmp[name] || []))
-    const capacity = round2(
-      (capacityByEmp[name] || []).reduce(
-        (s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0
-      )
-    )
-    const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
-    const team     = (capacityByEmp[name] || [{ Team: '' }])[0].Team
+  return Object.keys(capacityByEmp).map(name => {
+    const rows     = capacityByEmp[name]
+    const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
+    const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+    const utilPct  = calculateUtilization(logged, capacity)
+    const team     = rows[0]?.Team || ''
     return { name, team, logged, capacity, utilPct }
   }).filter(e => !(e.logged === 0 && e.capacity === 0))
     .sort((a, b) => b.utilPct - a.utilPct)
@@ -225,7 +234,7 @@ export function calcWeeklyUtilizationTrend(capacityRows, year, month) {
     })
     const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
     const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
-    const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+    const utilPct  = calculateUtilization(logged, capacity)
     // rangeStart/rangeEnd (as "YYYY-MM-DD" strings, matching the Date column
     // format) are carried along so a click on this week's bar/point can
     // re-derive the exact same row subset for a drill-down, without
@@ -250,7 +259,7 @@ export function calcWeeklyUtilizationTrend(capacityRows, year, month) {
 function sumLoggedCapacity(rows) {
   const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
   const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
-  const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+  const utilPct  = calculateUtilization(logged, capacity)
   return { logged, capacity, utilPct }
 }
 
@@ -396,6 +405,18 @@ export function calcTagHoursByEmployee(rows, tagWhitelist) {
   }).sort((a, b) => b.total - a.total)
 }
 
+// Drill-down for the "Hours by Time Log Tag" donut — every employee who
+// logged hours under one specific tag, descending by hours. `rows` is
+// whatever already-filtered Raw Time Log rows the donut itself was built
+// from, so this always matches the slice the user clicked.
+export function calcEmployeeHoursByTag(rows, tag) {
+  const scoped = rows.filter(r => r['TIME LOG TAG'] === tag)
+  const byEmp  = groupBy(scoped, 'WHO')
+  return Object.entries(byEmp)
+    .map(([name, empRows]) => ({ name, hours: round2(sumHours(empRows)) }))
+    .sort((a, b) => b.hours - a.hours)
+}
+
 export function calcHoursByProject(rows) {
   const byProject = groupBy(rows, 'PROJECT')
   return Object.entries(byProject)
@@ -449,13 +470,45 @@ export function calcTeamUtilizationByDayOfWeek(capacityRows) {
       const logged   = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)'])   || 0), 0))
       const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
       const isOffDay = capacity === 0
-      const utilPct  = capacity > 0 ? roundPct((logged / capacity) * 100) : 0
+      const utilPct  = calculateUtilization(logged, capacity)
       return { team, logged, capacity, utilPct, isOffDay }
     })
     return { day, cells }
   })
 
   return { teams, matrix }
+}
+
+// ─── Weekly Report-only variants of shared Comparison-tab helpers ───────────
+// calcCapacityByEmployee/calcTeamUtilizationSummary/calcCapacitySummary below
+// (in the Comparison section) are also used by the Comparison tab — these are
+// deliberate duplicates (not a shared/modified version of those) so Weekly
+// Report's period drill-down modal and Week-over-Week widget can route
+// through calculateUtilization without touching Comparison's own numbers.
+
+export function calcCapacitySummaryForWeeklyReport(rows) {
+  const hours    = round2(rows.reduce((s, r) => s + (parseFloat(r['Logged (hrs)']) || 0), 0))
+  const capacity = round2(rows.reduce((s, r) => s + (parseFloat(r['Available (hrs)']) || 0), 0))
+  const util     = calculateUtilization(hours, capacity)
+  return { hours, capacity, util }
+}
+
+export function calcTeamUtilizationSummaryForWeeklyReport(rows) {
+  const byTeam = groupBy(rows, 'Team')
+  return Object.entries(byTeam)
+    .map(([team, r]) => ({ team, ...calcCapacitySummaryForWeeklyReport(r) }))
+    .sort((a, b) => b.util - a.util)
+}
+
+export function calcCapacityByEmployeeForWeeklyReport(rows) {
+  const byEmp = groupBy(rows, 'Name')
+  return Object.entries(byEmp).map(([name, r]) => {
+    const hours    = round2(r.reduce((s, x) => s + (parseFloat(x['Logged (hrs)']) || 0), 0))
+    const capacity = round2(r.reduce((s, x) => s + (parseFloat(x['Available (hrs)']) || 0), 0))
+    const util     = calculateUtilization(hours, capacity)
+    const team     = r[0]?.Team || ''
+    return { name, team, hours, capacity, util }
+  }).filter(e => e.hours > 0 || e.capacity > 0)
 }
 
 // ─── Utilization color coding ─────────────────────────────────────────────────
@@ -466,7 +519,7 @@ export function utilizationColor(pct) {
   if (pct < 85)  return { bg: SEQUENTIAL_STOPS[2], label: 'Good' }
   if (pct < 90)  return { bg: SEQUENTIAL_STOPS[3], label: 'Very Good' }
   if (pct < 95)  return { bg: SEQUENTIAL_STOPS[4], label: 'Excellent' }
-  return           { bg: SEQUENTIAL_STOPS[5],      label: 'Provisional' }
+  return           { bg: SEQUENTIAL_STOPS[5],      label: 'Professional' }
 }
 
 // ─── Comparison (2025 vs 2026) ────────────────────────────────────────────────
@@ -482,6 +535,17 @@ function countActiveEmployees(rows) {
       .filter(r => (parseFloat(r['Available (hrs)']) || 0) > 0 || (parseFloat(r['Logged (hrs)']) || 0) > 0)
       .map(r => r.Name)
   ).size
+}
+
+// Same "active" definition as countActiveEmployees, but returns the actual
+// names instead of just a count — used by the Team/Grand Summary Employees
+// column drill-down, so the modal's list always matches the cell's number.
+export function getActiveEmployeeNames(rows) {
+  return [...new Set(
+    rows
+      .filter(r => (parseFloat(r['Available (hrs)']) || 0) > 0 || (parseFloat(r['Logged (hrs)']) || 0) > 0)
+      .map(r => r.Name)
+  )].sort((a, b) => a.localeCompare(b))
 }
 
 // Unified Growth % used everywhere in the Comparison dashboard: relative
@@ -725,6 +789,39 @@ export function calcOverdueDays(row, today = new Date()) {
   return days > 0 ? days : 0
 }
 
+// ─── Overdue Tasks by Employee (Weekly Report chart) ──────────────────────
+// Counts each employee's currently-overdue tasks (Overdue Days > 0 — the
+// exact same calcOverdueDays rule the Task Details table's "Overdue Days"
+// column already uses) out of whatever task rows are passed in, so this
+// chart's numbers always trace back to that same table. Team membership
+// (for the Business Development/Trainees exclusion) is looked up from the
+// full, unfiltered Capacity rows — a stable Name -> Team map — since task
+// rows carry no Team column of their own and the Task Details table itself
+// isn't scoped by the main Team/Employee filter either.
+const OVERDUE_CHART_EXCLUDED_TEAMS = ['business development', 'trainees']
+
+export function calcOverdueTaskCountByEmployee(taskRows, capacityRows) {
+  const nameToTeam = {}
+  capacityRows.forEach(r => {
+    if (r.Name && !(r.Name in nameToTeam)) nameToTeam[r.Name] = r.Team || ''
+  })
+
+  const today = new Date()
+  const counts = {}
+  taskRows.forEach(row => {
+    const overdueDays = calcOverdueDays(row, today)
+    if (!overdueDays || overdueDays <= 0) return
+    splitAssignees(row['ASSIGNEE(S)']).forEach(name => {
+      counts[name] = (counts[name] || 0) + 1
+    })
+  })
+
+  return Object.entries(counts)
+    .map(([name, count]) => ({ name, count, team: nameToTeam[name] || '' }))
+    .filter(e => !OVERDUE_CHART_EXCLUDED_TEAMS.includes(e.team.trim().toLowerCase()))
+    .sort((a, b) => b.count - a.count)
+}
+
 export function buildTasksPivot(rows) {
   const today = new Date()
   return rows.map(row => ({
@@ -738,4 +835,364 @@ export function buildTasksPivot(rows) {
     status:      row['STATUS'],
     overdueDays: calcOverdueDays(row, today),
   }))
+}
+
+// Drill-down for the "Hours by Time Log Tag per Employee" chart — every task
+// (from the Tasks sheet) assigned to one specific employee, scoped to the
+// tab's currently active date range (Created Date, same field the Task
+// Details table's own date filtering already keys off).
+export function getEmployeeTasksInRange(taskRows, employeeName, startDate, endDate) {
+  const scoped = filterTasksByDate(taskRows, startDate, endDate, 'CREATED DATE')
+  return scoped
+    .filter(row => splitAssignees(row['ASSIGNEE(S)']).includes(employeeName))
+    .map(row => ({
+      taskId:      row['TASK ID'],
+      taskName:    row['TASK NAME'],
+      status:      row['STATUS'] === 'completed' ? 'Complete' : 'In Progress',
+      createdDate: row['CREATED DATE'],
+      dueDate:     row['DUE DATE'],
+    }))
+}
+
+// ─── Task Details tab ──────────────────────────────────────────────────────
+// A separate, fuller read of the same Tasks sheet used above — this tab also
+// reads TEAM, STAGE, PRIORITY, ESTIMATED HRS, LOGGED HRS, TAGS, DESCRIPTION,
+// and any "CF: ..." custom field column. The Tasks sheet's own STATUS enum
+// is only 'new' | 'completed' | 'reopened' — there is no "in progress"
+// status. "In Progress" instead comes from the separate STAGE column (a
+// per-task-list workflow/kanban stage), which does have that value — with
+// inconsistent casing ("In Progress" vs "In progress") in the source data,
+// hence the case-insensitive compare below.
+const TASK_STAGE_IN_PROGRESS = 'in progress'
+
+export function getUniqueTaskTags(rows) {
+  const set = new Set()
+  rows.forEach(r => splitAssignees(r['TAGS']).forEach(t => set.add(t)))
+  return [...set].sort()
+}
+
+// Per-employee task summary (one row per assignee — a multi-assignee task
+// counts once for each person on it). Team is looked up from the Capacity
+// sheet's Name -> Team map rather than the task row's own (frequently blank)
+// TEAM column — same reliability reasoning as calcOverdueTaskCountByEmployee
+// above. New/Complete come straight from STATUS; In Progress from STAGE;
+// Overdue from the same calcOverdueDays rule used everywhere else. These
+// aren't mutually exclusive (e.g. a task can be both overdue and "in
+// progress") — each column is an independent count, not a partition of Total.
+export function calcTaskSummaryByEmployee(taskRows, capacityRows) {
+  const nameToTeam = {}
+  capacityRows.forEach(r => {
+    if (r.Name && !(r.Name in nameToTeam)) nameToTeam[r.Name] = r.Team || ''
+  })
+
+  const today = new Date()
+  const byEmp = {}
+  taskRows.forEach(row => {
+    const status = (row.STATUS || '').trim().toLowerCase()
+    const stage  = (row.STAGE  || '').trim().toLowerCase()
+    const overdueDays = calcOverdueDays(row, today)
+    splitAssignees(row['ASSIGNEE(S)']).forEach(name => {
+      if (!byEmp[name]) {
+        byEmp[name] = { name, team: nameToTeam[name] || '', total: 0, complete: 0, new: 0, inProgress: 0, overdue: 0 }
+      }
+      const e = byEmp[name]
+      e.total += 1
+      if (status === 'completed') e.complete += 1
+      if (status === 'new') e.new += 1
+      if (stage === TASK_STAGE_IN_PROGRESS) e.inProgress += 1
+      if (overdueDays && overdueDays > 0) e.overdue += 1
+    })
+  })
+
+  return Object.values(byEmp).sort((a, b) => b.total - a.total)
+}
+
+// Full task list for one employee (Task Details tab's employee drill-down
+// modal) — every column the Teamwork-style task detail modal needs, plus the
+// raw row itself so that modal can also read STAGE/PRIORITY/TAGS/CF fields
+// without a second lookup.
+export function getEmployeeTaskList(taskRows, employeeName) {
+  const today = new Date()
+  return taskRows
+    .filter(row => splitAssignees(row['ASSIGNEE(S)']).includes(employeeName))
+    .map(row => ({
+      taskId:        row['TASK ID'],
+      taskName:      row['TASK NAME'],
+      status:        row['STATUS'],
+      createdDate:   row['CREATED DATE'],
+      startDate:     row['START DATE'],
+      dueDate:       row['DUE DATE'],
+      completedDate: row['COMPLETED DATE'],
+      overdueDays:   calcOverdueDays(row, today),
+      row,
+    }))
+    .sort((a, b) => (b.overdueDays ?? -1) - (a.overdueDays ?? -1))
+}
+
+// Task counts (+ summed Logged Hrs) per employee for one specific tag —
+// Task Details tab's "tasks per employee by tag" chart.
+export function calcTaskCountByEmployeeForTag(taskRows, tag) {
+  const byEmp = {}
+  taskRows.forEach(row => {
+    if (!splitAssignees(row['TAGS']).includes(tag)) return
+    splitAssignees(row['ASSIGNEE(S)']).forEach(name => {
+      if (!byEmp[name]) byEmp[name] = { name, count: 0, loggedHrs: 0 }
+      byEmp[name].count += 1
+      byEmp[name].loggedHrs = round2(byEmp[name].loggedHrs + (parseFloat(row['LOGGED HRS']) || 0))
+    })
+  })
+  return Object.values(byEmp).sort((a, b) => b.count - a.count)
+}
+
+// Total Logged Hrs per Teamwork task ID, summed from the Main Sheet's "Raw
+// Time Log" tab — the Tasks sheet's own LOGGED HRS column is blank/zero for
+// most rows, so calcHoursByTaskTag below (and the Task Detail modal's Time
+// Logs table) both read actual logged time from here instead, joined by
+// TASK ID. Built once as a Map so per-task lookups stay O(1) rather than
+// re-scanning the whole Raw Time Log sheet for every task.
+function sumLoggedHoursByTaskId(rawTimeLogRows) {
+  const byId = new Map()
+  rawTimeLogRows.forEach(row => {
+    const id = String(row['TASK ID'] ?? '').trim()
+    if (!id) return
+    const hrs = parseFloat(row['HOURS']) || 0
+    byId.set(id, (byId.get(id) || 0) + hrs)
+  })
+  return byId
+}
+
+// Total Logged Hrs per tag, summed across the whole team (not broken out per
+// employee) — Task Details tab's "Total Hours by Tag" chart. Each task's
+// actual logged hours come from Raw Time Log (via sumLoggedHoursByTaskId
+// above), not the Tasks sheet's own LOGGED HRS column. A task carrying more
+// than one tag contributes its full logged hours to each of its tags (not
+// split between them), matching calcTaskCountByEmployeeForTag's per-tag
+// counting above. `allowedNames`, when given, scopes to tasks with at least
+// one assignee in that set — pass the tab's currently filtered employee-name
+// set (same Team/Employee filter the rest of the tab applies) so this
+// respects the active filter; pass null for no scoping.
+export function calcHoursByTaskTag(taskRows, rawTimeLogRows, allowedNames = null) {
+  const loggedByTaskId = sumLoggedHoursByTaskId(rawTimeLogRows)
+  const byTag = {}
+  taskRows.forEach(row => {
+    if (allowedNames && !splitAssignees(row['ASSIGNEE(S)']).some(n => allowedNames.has(n))) return
+    const tags = splitAssignees(row['TAGS'])
+    if (tags.length === 0) return
+    const taskId = String(row['TASK ID'] ?? '').trim()
+    const hrs = loggedByTaskId.get(taskId) || 0
+    tags.forEach(tag => {
+      byTag[tag] = round2((byTag[tag] || 0) + hrs)
+    })
+  })
+  return Object.entries(byTag)
+    .map(([tag, hours]) => ({ tag, hours }))
+    .sort((a, b) => b.hours - a.hours)
+}
+
+function normalizeTag(tag) {
+  return (tag || '').trim().toLowerCase()
+}
+
+// Tags tab groupings — actual tag casing/spacing in the sheet varies
+// ("offline design" vs "Offline Design", "Shooting Day" vs "shooting day"),
+// so every lookup against these goes through normalizeTag() rather than an
+// exact string match. All three groups' tags were confirmed present in the
+// live "Raw Tasks" sheet.
+export const TAG_GROUPS = [
+  {
+    key: 'design',
+    mainLabel: 'Total Design',
+    subTags: [
+      { label: 'Total Post',            tag: 'Post' },
+      { label: 'Total Banner',          tag: 'Banner' },
+      { label: 'Total Reels',           tag: 'Reels' },
+      { label: 'Total Offline Design',  tag: 'Offline Design' },
+      { label: 'Total Campaign Design', tag: 'Campaign Design' },
+    ],
+  },
+  {
+    key: 'edit',
+    mainLabel: 'Total Edit',
+    subTags: [
+      { label: 'Total Edit Post', tag: 'Edit Post' },
+      { label: 'Total Edit Reel', tag: 'Edit Reel' },
+      { label: 'Total Edit',      tag: 'Edit' },
+    ],
+  },
+  {
+    key: 'shooting',
+    mainLabel: 'Total Shooting',
+    subTags: [
+      { label: 'Video Shooting', tag: 'video shooting' },
+      { label: 'Photo Shooting', tag: 'Photo shooting' },
+      { label: 'Shooting Day',   tag: 'shooting day' },
+    ],
+  },
+]
+
+// Task counts per tag group for the Tags tab. Each group's main widget sums
+// its member tags' task counts — a task carrying two tags from the same
+// group counts once per tag (not deduplicated), matching the same
+// "contributes fully to every tag it carries" convention already used by
+// calcHoursByTaskTag above. Each sub-widget is that one tag's count alone.
+// `allowedNames`, when given, scopes to tasks with at least one assignee in
+// that set (the tab's currently filtered employee-name set); pass null for
+// no scoping.
+function countTasksByNormalizedTag(taskRows, allowedNames) {
+  const countByTag = {}
+  taskRows.forEach(row => {
+    if (allowedNames && !splitAssignees(row['ASSIGNEE(S)']).some(n => allowedNames.has(n))) return
+    splitAssignees(row['TAGS']).forEach(tag => {
+      const key = normalizeTag(tag)
+      countByTag[key] = (countByTag[key] || 0) + 1
+    })
+  })
+  return countByTag
+}
+
+export function calcTagGroupCounts(taskRows, allowedNames = null) {
+  const countByTag = countTasksByNormalizedTag(taskRows, allowedNames)
+
+  return TAG_GROUPS.map(group => {
+    const subs = group.subTags.map(sub => ({
+      label: sub.label,
+      count: countByTag[normalizeTag(sub.tag)] || 0,
+    }))
+    return {
+      key: group.key,
+      mainLabel: group.mainLabel,
+      total: subs.reduce((sum, sub) => sum + sub.count, 0),
+      subs,
+    }
+  })
+}
+
+// Task counts for an arbitrary, caller-ordered list of tags — the Tags
+// tab's pie charts ("Total Number of Design"/"Total Number of Edit"),
+// which show a different tag subset/order than the TAG_GROUPS widgets
+// above. Same normalized-tag matching and allowedNames scoping.
+export function calcTaskCountsForTags(taskRows, tags, allowedNames = null) {
+  const countByTag = countTasksByNormalizedTag(taskRows, allowedNames)
+  return tags.map(({ label, tag }) => ({ label, count: countByTag[normalizeTag(tag)] || 0 }))
+}
+
+// Task counts per employee for a single tag — the Tags tab's "Number of
+// <Tag> by Employee" bar charts. A multi-assignee task counts once per
+// assignee. Deliberately a separate function from calcTaskCountByEmployeeForTag
+// (Task Details tab, above) rather than adding allowedNames to it, since that
+// chart must keep its existing unfiltered behavior unchanged.
+export function calcTaskCountByEmployeeForTagFiltered(taskRows, tag, allowedNames = null) {
+  const key = normalizeTag(tag)
+  const byEmp = {}
+  taskRows.forEach(row => {
+    if (!splitAssignees(row['TAGS']).some(t => normalizeTag(t) === key)) return
+    splitAssignees(row['ASSIGNEE(S)']).forEach(name => {
+      if (allowedNames && !allowedNames.has(name)) return
+      byEmp[name] = (byEmp[name] || 0) + 1
+    })
+  })
+  return Object.entries(byEmp)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+// Logged hours per employee for a single tag — the Tags tab's "Total Hours
+// — <Tag> by Employee" bar charts. Hours come from the Main Sheet's Raw
+// Time Log (joined by TASK ID via sumLoggedHoursByTaskId, same source as
+// calcHoursByTaskTag above), not the Tasks sheet's own LOGGED HRS column.
+// A task's full logged hours count toward every one of its assignees (not
+// split between co-assignees on the same task).
+export function calcHoursByEmployeeForTag(taskRows, rawTimeLogRows, tag, allowedNames = null) {
+  const loggedByTaskId = sumLoggedHoursByTaskId(rawTimeLogRows)
+  const key = normalizeTag(tag)
+  const byEmp = {}
+  taskRows.forEach(row => {
+    if (!splitAssignees(row['TAGS']).some(t => normalizeTag(t) === key)) return
+    const taskId = String(row['TASK ID'] ?? '').trim()
+    const hrs = loggedByTaskId.get(taskId) || 0
+    splitAssignees(row['ASSIGNEE(S)']).forEach(name => {
+      if (allowedNames && !allowedNames.has(name)) return
+      byEmp[name] = round2((byEmp[name] || 0) + hrs)
+    })
+  })
+  return Object.entries(byEmp)
+    .map(([name, hours]) => ({ name, hours }))
+    .sort((a, b) => b.hours - a.hours)
+}
+
+// Drill-down for the Tags tab's pie charts — every task carrying the given
+// tag, scoped by the same allowedNames set the rest of the tab uses. One
+// row per task (not per assignee — Assignee(s) is shown as the raw
+// comma-joined string since a task can carry more than one).
+export function getTasksForTag(taskRows, tag, allowedNames = null) {
+  const key = normalizeTag(tag)
+  const today = new Date()
+  return taskRows
+    .filter(row => splitAssignees(row['TAGS']).some(t => normalizeTag(t) === key))
+    .filter(row => !allowedNames || splitAssignees(row['ASSIGNEE(S)']).some(n => allowedNames.has(n)))
+    .map(row => ({
+      taskId:      row['TASK ID'],
+      taskName:    row['TASK NAME'],
+      assignee:    row['ASSIGNEE(S)'] || '',
+      status:      row['STATUS'],
+      createdDate: row['CREATED DATE'],
+      dueDate:     row['DUE DATE'],
+      overdueDays: calcOverdueDays(row, today),
+    }))
+}
+
+// Drill-down for the Tags tab's per-employee bar charts — every task
+// tagged with `tag` where `employeeName` is one of the assignees. Logged
+// hours are always computed (joined via Raw Time Log by TASK ID, same
+// source as calcHoursByEmployeeForTag above) so the modal can show them for
+// the "hours" charts and simply omit the column for the "count" charts.
+export function getTasksForEmployeeAndTag(taskRows, rawTimeLogRows, employeeName, tag) {
+  const key = normalizeTag(tag)
+  const loggedByTaskId = sumLoggedHoursByTaskId(rawTimeLogRows)
+  const today = new Date()
+  return taskRows
+    .filter(row => splitAssignees(row['TAGS']).some(t => normalizeTag(t) === key))
+    .filter(row => splitAssignees(row['ASSIGNEE(S)']).includes(employeeName))
+    .map(row => {
+      const taskId = String(row['TASK ID'] ?? '').trim()
+      return {
+        taskId,
+        taskName:    row['TASK NAME'],
+        status:      row['STATUS'],
+        createdDate: row['CREATED DATE'],
+        dueDate:     row['DUE DATE'],
+        overdueDays: calcOverdueDays(row, today),
+        loggedHrs:   round2(loggedByTaskId.get(taskId) || 0),
+      }
+    })
+}
+
+// Itemized time-log entries for one task (Task Detail modal's "TIME LOGS"
+// table) — pulled from the Main Sheet's "Raw Time Log" tab and matched by
+// TASK ID, since the Tasks sheet's own LOGGED HRS column is unreliable
+// (blank/zero for most rows there). Both sheets carry TASK ID as a plain
+// numeric string; comparing as trimmed strings avoids false mismatches from
+// stray whitespace or number-vs-text formatting differences between them.
+export function getTaskTimeLogs(rawTimeLogRows, taskId) {
+  const id = String(taskId ?? '').trim()
+  if (!id) return []
+  return rawTimeLogRows
+    .filter(row => String(row['TASK ID'] ?? '').trim() === id)
+    .map(row => ({
+      who:      row['WHO'] || '',
+      date:     row['DATE'] || '',
+      hours:    parseFloat(row['HOURS']) || 0,
+      billable: row['BILLABLE'] || '',
+    }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+}
+
+// Every "CF: ..." custom field present (non-empty) on a task row — the
+// Task Detail modal's "Custom Fields" tab. Purely data-driven: whatever
+// custom field columns exist in the sheet for this task show up here
+// automatically, nothing hardcoded by name.
+export function getTaskCustomFields(row) {
+  return Object.entries(row)
+    .filter(([key, value]) => key.startsWith('CF: ') && value && String(value).trim())
+    .map(([key, value]) => ({ label: key.replace(/^CF:\s*/, ''), value }))
 }

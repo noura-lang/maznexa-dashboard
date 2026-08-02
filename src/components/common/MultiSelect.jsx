@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 
-export default function MultiSelect({ options = [], value = [], onChange, placeholder = 'All' }) {
+export default function MultiSelect({ options = [], value = [], onChange, placeholder = 'All', disabled = false }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -36,7 +36,10 @@ export default function MultiSelect({ options = [], value = [], onChange, placeh
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="filter-input flex items-center gap-2 min-w-[140px] justify-between"
+        disabled={disabled}
+        title={disabled ? 'Locked by your data access scope' : undefined}
+        className={`filter-input flex items-center gap-2 min-w-[140px] justify-between
+                    ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
       >
         <span className="truncate max-w-[120px]">{label}</span>
         <svg
@@ -47,20 +50,34 @@ export default function MultiSelect({ options = [], value = [], onChange, placeh
         </svg>
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div className="absolute z-50 top-full mt-1 left-0 min-w-full w-max max-h-60 overflow-y-auto
                         rounded-xl border shadow-xl
                         dark:bg-brand-900 dark:border-white/10
                         bg-white border-brand-200">
-          {!allSelected && (
-            <button
-              onClick={() => onChange(options)}
-              className="w-full text-left px-3 py-2 text-xs font-medium
-                         dark:text-accent text-brand-600
-                         dark:hover:bg-white/5 hover:bg-brand-50"
-            >
-              Select All ({placeholder})
-            </button>
+          {(!allSelected || value.length > 0) && (
+            <div className="flex items-center border-b dark:border-white/10 border-brand-100">
+              {!allSelected && (
+                <button
+                  onClick={() => onChange(options)}
+                  className="flex-1 text-left px-3 py-2 text-xs font-medium
+                             dark:text-accent text-brand-600
+                             dark:hover:bg-white/5 hover:bg-brand-50"
+                >
+                  Select All
+                </button>
+              )}
+              {value.length > 0 && (
+                <button
+                  onClick={() => onChange([])}
+                  className="flex-1 text-left px-3 py-2 text-xs font-medium
+                             dark:text-white/60 text-brand-500
+                             dark:hover:bg-white/5 hover:bg-brand-50"
+                >
+                  Deselect All
+                </button>
+              )}
+            </div>
           )}
           {options.map(opt => (
             <label

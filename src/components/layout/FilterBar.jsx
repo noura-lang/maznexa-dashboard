@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef } from 'react'
 import { format, subDays, startOfMonth } from 'date-fns'
 import MultiSelect from '../common/MultiSelect'
 import { useFilters } from '../../context/FilterContext'
+import { useAuth } from '../../context/AuthContext'
 import { useRawTimeLog } from '../../hooks/useSheetData'
 import { getUniqueTeams, getUniqueEmployees, getUniqueClients } from '../../api/transformData'
+import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../../api/accessSheetApi'
 
 const DATE_PRESETS = [
   { label: 'Today',        range: () => { const t = new Date(); return [t, t] } },
@@ -23,6 +25,11 @@ export default function FilterBar() {
   } = useFilters()
 
   const { data: rawRows = [] } = useRawTimeLog()
+  const { employee, permissions: rawPermissions } = useAuth()
+  const permissions = rawPermissions || DEFAULT_DENIED_PERMISSIONS
+  const dataScope = permissions.dataScope
+  const scopeLocksTeam     = dataScope === DATA_SCOPES.MY_TEAM || dataScope === DATA_SCOPES.MY_DATA
+  const scopeLocksEmployee = dataScope === DATA_SCOPES.MY_DATA
 
   const teamOptions     = useMemo(() => getUniqueTeams(rawRows), [rawRows])
   const employeeOptions = useMemo(
@@ -51,9 +58,35 @@ export default function FilterBar() {
     }
   }, [teamOptions, clientOptions, rawRows])
 
+  // Data Scope enforcement (Permissions sheet) — re-applied any time the
+  // scope, employee, or underlying data changes, so it always wins over the
+  // "select everything" init above and can't be bypassed by switching Team/
+  // Employee elsewhere; the pickers are also disabled below as the primary
+  // (visible) guard. Matches by the exact Name/Team text from the Employees
+  // sheet against Raw Time Log's WHO/TEAM columns, same as every other
+  // employee-name join already used across this app.
+  useEffect(() => {
+    if (!employee) return
+    if (dataScope === DATA_SCOPES.MY_DATA) {
+      setSelectedTeams(employee.team ? [employee.team] : teamOptions)
+      setSelectedEmployees(employee.name ? [employee.name] : [])
+    } else if (dataScope === DATA_SCOPES.MY_TEAM && employee.team) {
+      setSelectedTeams([employee.team])
+      setSelectedEmployees(getUniqueEmployees(rawRows, [employee.team]))
+    }
+  }, [dataScope, employee, rawRows, teamOptions])
+
   function resetAll() {
-    setSelectedTeams(teamOptions)
-    setSelectedEmployees(getUniqueEmployees(rawRows, teamOptions))
+    if (dataScope === DATA_SCOPES.MY_DATA && employee) {
+      setSelectedTeams(employee.team ? [employee.team] : teamOptions)
+      setSelectedEmployees(employee.name ? [employee.name] : [])
+    } else if (dataScope === DATA_SCOPES.MY_TEAM && employee?.team) {
+      setSelectedTeams([employee.team])
+      setSelectedEmployees(getUniqueEmployees(rawRows, [employee.team]))
+    } else {
+      setSelectedTeams(teamOptions)
+      setSelectedEmployees(getUniqueEmployees(rawRows, teamOptions))
+    }
     setSelectedClients(clientOptions)
   }
 
@@ -69,7 +102,8 @@ export default function FilterBar() {
     (clientOptions.length > 0 && selectedClients.length < clientOptions.length)
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3">
+    <div className="sticky top-0 z-40 dark:bg-brand-950/80 bg-white/70 backdrop-blur-md border-b dark:border-white/10 border-brand-200">
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 py-3">
       <div className="flex flex-wrap items-center gap-3">
         {/* Date range */}
         <div className="flex items-center gap-2">
@@ -122,6 +156,7 @@ export default function FilterBar() {
               setSelectedEmployees(getUniqueEmployees(rawRows, val))
             }}
             placeholder="All Teams"
+            disabled={scopeLocksTeam}
           />
         </div>
 
@@ -133,6 +168,7 @@ export default function FilterBar() {
             value={selectedEmployees}
             onChange={setSelectedEmployees}
             placeholder="All Employees"
+            disabled={scopeLocksEmployee}
           />
         </div>
 
@@ -158,6 +194,7 @@ export default function FilterBar() {
             ↺ Reset filters
           </button>
         )}
+      </div>
       </div>
     </div>
   )

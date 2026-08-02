@@ -42,7 +42,7 @@ export default function KPIRingCard({ label, value, sub, size = 132 }) {
         </div>
       </div>
       {sub && (
-        <p className="text-xs dark:text-white/40 text-brand-400 mt-0.5 text-center">{sub}</p>
+        <p className="text-xs font-light dark:text-white/40 text-brand-400 mt-0.5 text-center">{sub}</p>
       )}
     </div>
   )

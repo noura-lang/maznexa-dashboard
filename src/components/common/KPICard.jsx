@@ -4,13 +4,13 @@
 // button (e.g. drilling into the team/period it summarizes) — uses a native
 // <button> wrapper rather than nesting this div inside one, since a <div> is
 // not valid <button> content.
-export default function KPICard({ label, value, sub, accent = false, onClick }) {
+export default function KPICard({ label, value, sub, accent = false, center = false, onClick }) {
   const Wrapper = onClick ? 'button' : 'div'
   return (
     <Wrapper
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`card p-5 flex flex-col gap-1 rounded-2xl text-left w-full
+      className={`card p-5 flex flex-col gap-1 rounded-2xl w-full ${center ? 'text-center' : 'text-left'}
         bg-gradient-to-br dark:from-brand-600/30 dark:via-brand-700/10 dark:to-transparent
         from-brand-200/70 via-brand-100/30 to-transparent
         ${accent ? 'ring-1 ring-accent/40' : ''}
@@ -23,7 +23,7 @@ export default function KPICard({ label, value, sub, accent = false, onClick }) 
         {value}
       </p>
       {sub && (
-        <p className="text-xs dark:text-white/40 text-brand-400 mt-0.5">{sub}</p>
+        <p className="text-xs font-light dark:text-white/40 text-brand-400 mt-0.5">{sub}</p>
       )}
     </Wrapper>
   )
