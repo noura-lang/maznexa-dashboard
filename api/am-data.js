@@ -1,6 +1,8 @@
-// CommonJS (.cjs) — see lib/firebaseAdmin.cjs for why.
-const { verifyEmployee, HttpError } = require('../lib/verifyEmployee.cjs')
-const { sheetsClient, fetchNamedRows, fetchRawValues, AM_SHEET_ID } = require('../lib/googleSheets.cjs')
+// CommonJS — this folder has its own api/package.json with
+// {"type": "commonjs"}, overriding the project root's "type": "module" just
+// for these serverless functions. See lib/firebaseAdmin.js for why.
+const { verifyEmployee, HttpError } = require('../lib/verifyEmployee.js')
+const { sheetsClient, fetchNamedRows, fetchRawValues, AM_SHEET_ID } = require('../lib/googleSheets.js')
 
 // Row-level-filtered replacement for src/api/amSheetApi.js's client-side
 // fetchAmZoho/fetchAmTargets/fetchAmMarginEmployeeNames — those read the AM
