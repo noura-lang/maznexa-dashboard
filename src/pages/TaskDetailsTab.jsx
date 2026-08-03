@@ -3,7 +3,7 @@ import { useTasks, useCapacity2026, useRawTimeLog } from '../hooks/useSheetData'
 import { useFilters } from '../context/FilterContext'
 import { useAuth } from '../context/AuthContext'
 import {
-  calcTaskSummaryByEmployee, getEmployeeTaskList, calcTaskCountByEmployeeForTag,
+  calcTaskSummaryByEmployee, getEmployeeTaskList, calcTaskCountByEmployeeForTagFiltered,
   getUniqueTaskTags, getTaskCustomFields, calcHoursByTaskTag, getTaskTimeLogs, round2,
 } from '../api/transformData'
 import { DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
@@ -422,6 +422,14 @@ export default function TaskDetailsTab() {
     overdue: acc.overdue + e.overdue,
   }), { total: 0, complete: 0, overdue: 0 }), [summary])
 
+  // Every chart below that isn't already row-scoped by `summary` itself
+  // (the tag charts read from the raw Tasks sheet, not from `summary`)
+  // filters through this same set of allowed employee names, so they all
+  // respect the same Team/Employee filter — and therefore the same Data
+  // Scope enforcement (My Data Only / My Team Only / All Employees) — as
+  // the summary table above.
+  const filteredEmployeeNames = useMemo(() => new Set(summary.map(e => e.name)), [summary])
+
   const [sortKey, setSortKey] = useState('total')
   const [sortDir, setSortDir] = useState('desc')
   function handleSort(key) {
@@ -458,14 +466,12 @@ export default function TaskDetailsTab() {
   const [selectedTag, setSelectedTag] = useState(null)
   const effectiveTag = selectedTag ?? availableTags[0] ?? null
   const tagByEmployee = useMemo(
-    () => (effectiveTag ? calcTaskCountByEmployeeForTag(rawTasks, effectiveTag) : []),
-    [rawTasks, effectiveTag]
+    () => (effectiveTag ? calcTaskCountByEmployeeForTagFiltered(rawTasks, effectiveTag, filteredEmployeeNames) : []),
+    [rawTasks, effectiveTag, filteredEmployeeNames]
   )
 
   // Total Logged Hrs by tag, whole team combined — respects the same
-  // Team/Employee filter as the summary table above (`summary` is already
-  // scoped to it), via the set of employee names it left standing.
-  const filteredEmployeeNames = useMemo(() => new Set(summary.map(e => e.name)), [summary])
+  // Team/Employee filter as the summary table above, via filteredEmployeeNames.
   const hoursByTag = useMemo(
     () => calcHoursByTaskTag(rawTasks, rawTimeLog, filteredEmployeeNames),
     [rawTasks, rawTimeLog, filteredEmployeeNames]

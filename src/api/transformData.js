@@ -930,7 +930,12 @@ export function getEmployeeTaskList(taskRows, employeeName) {
 }
 
 // Task counts (+ summed Logged Hrs) per employee for one specific tag —
-// Task Details tab's "tasks per employee by tag" chart.
+// unfiltered by Team/Employee/Data Scope. No longer used anywhere (Task
+// Details tab's "Tasks by Employee — by Tag" chart switched to the
+// allowedNames-aware calcTaskCountByEmployeeForTagFiltered below, so its
+// scope-locked employees only ever see their own Team's counts) — left in
+// place rather than deleted in case it's still useful as a genuinely
+// unfiltered read.
 export function calcTaskCountByEmployeeForTag(taskRows, tag) {
   const byEmp = {}
   taskRows.forEach(row => {
@@ -1076,11 +1081,11 @@ export function calcTaskCountsForTags(taskRows, tags, allowedNames = null) {
   return tags.map(({ label, tag }) => ({ label, count: countByTag[normalizeTag(tag)] || 0 }))
 }
 
-// Task counts per employee for a single tag — the Tags tab's "Number of
-// <Tag> by Employee" bar charts. A multi-assignee task counts once per
-// assignee. Deliberately a separate function from calcTaskCountByEmployeeForTag
-// (Task Details tab, above) rather than adding allowedNames to it, since that
-// chart must keep its existing unfiltered behavior unchanged.
+// Task counts per employee for a single tag, respecting the shared Team/
+// Employee filter (and therefore Data Scope) via `allowedNames` — the Tags
+// tab's "Number of <Tag> by Employee" bar charts, and Task Details tab's
+// "Tasks by Employee — by Tag" chart. A multi-assignee task counts once
+// per assignee.
 export function calcTaskCountByEmployeeForTagFiltered(taskRows, tag, allowedNames = null) {
   const key = normalizeTag(tag)
   const byEmp = {}
