@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { fetchSecureJson } from '../api/secureApi'
 import {
-  fetchAmZoho, fetchAmTargets, fetchAmMarginEmployeeNames,
   getAmEmployeeRoster, getAmClientsForEmployee, filterAmRows,
   calcAmTotals, calcAmMarginYtd, calcAmProgressPct,
   calcAmTargetComparisonChart, calcAmMonthlyTrend,
@@ -61,14 +61,17 @@ function BrandLegend({ payload }) {
 }
 
 // Account Managers Performance — a financially sensitive tab gated by its
-// own Permissions flag (App.jsx), reading the separate AM Sheet via the
-// signed-in user's own Google OAuth token (see amSheetApi.js), never the
-// public API key. Independent of the shared FilterContext date range —
-// this tab has its own Month/Company Name filters instead, since revenue
-// targets are annual and Zoho rows are per calendar month, not aligned
-// with the app's general date-range concept.
+// own Permissions flag (App.jsx), reading the separate AM Sheet through the
+// secure /api/am-data route (see api/am-data.js) rather than the signed-in
+// user's own Google OAuth token — that route verifies the caller's Firebase
+// ID token server-side and returns only their own rows (every row, if their
+// Permissions row has Admin=TRUE), so no employee Google account ever needs
+// direct access to this sheet. Independent of the shared FilterContext date
+// range — this tab has its own Month/Company Name filters instead, since
+// revenue targets are annual and Zoho rows are per calendar month, not
+// aligned with the app's general date-range concept.
 export default function AmPerformanceTab() {
-  const { accessToken } = useAuth()
+  const { firebaseUser } = useAuth()
   const [data, setData] = useState(null) // { zoho, targets, marginNames } | null
   const [loadError, setLoadError] = useState(null)
   const [selectedEmployee, setSelectedEmployee] = useState(null)
@@ -78,17 +81,13 @@ export default function AmPerformanceTab() {
   const load = useCallback(async () => {
     setLoadError(null)
     try {
-      const [zoho, targets, marginNames] = await Promise.all([
-        fetchAmZoho(accessToken),
-        fetchAmTargets(accessToken),
-        fetchAmMarginEmployeeNames(accessToken),
-      ])
-      setData({ zoho, targets, marginNames })
+      const result = await fetchSecureJson('/api/am-data', firebaseUser)
+      setData(result)
     } catch (err) {
       console.error('Failed to load Account Managers Performance data:', err)
       setLoadError(err.message)
     }
-  }, [accessToken])
+  }, [firebaseUser])
 
   useEffect(() => { load() }, [load])
 
@@ -161,9 +160,8 @@ export default function AmPerformanceTab() {
       <div className="card p-8 text-center mt-6 space-y-3">
         <p className="text-red-400 font-semibold">{loadError}</p>
         <p className="text-xs dark:text-white/50 text-brand-500">
-          This usually means your Google account doesn't have (at least) Viewer access to the
-          Account Managers Performance sheet in Google Drive, or your session's Sheets access
-          token expired — try signing in again.
+          This usually means your account isn't set up correctly in the Access Sheet yet, or your
+          sign-in session expired — try signing in again, or contact an admin if the problem persists.
         </p>
         <button onClick={load} className="filter-input text-xs px-4 py-1.5">Retry</button>
       </div>

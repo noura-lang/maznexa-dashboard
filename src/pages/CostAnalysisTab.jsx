@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useRawTimeLog } from '../hooks/useSheetData'
+import { fetchSecureJson } from '../api/secureApi'
 import {
-  fetchCostRates, buildCostRateMap, getCostMonthOptions, calcEmployeeCostRows,
+  buildCostRateMap, getCostMonthOptions, calcEmployeeCostRows,
   filterCostRows, getCostClientOptions, getCostEmployeeOptions, calcCostTotals,
   calcCostByClient, calcCostByEmployeeMonthly, calcCostByProjectMonthly,
   calcCostByEmployee, calcCostByProject, calcMonthlyCostTrend, formatMonthKey,
@@ -151,15 +152,19 @@ function DrillDownModal({ drillDown, onClose }) {
 }
 
 // Cost Analysis — a financially sensitive tab gated by its own Permissions
-// flag (App.jsx), reading the separate Cost sheet via the signed-in user's
-// own Google OAuth token (see costSheetApi.js), never the public API key.
-// Hours come from the Main Sheet's Raw Time Log (already public, shared
-// with every other tab via useRawTimeLog), joined against the Cost sheet's
-// per-employee/month rates client-side. Independent of the shared
-// FilterContext date range — this tab has its own Month/Client/Employee
-// filters instead, matching the AM Performance tab's pattern.
+// flag (App.jsx), reading the separate Cost sheet through the secure
+// /api/cost-data route (see api/cost-data.js) rather than the signed-in
+// user's own Google OAuth token — that route verifies the caller's Firebase
+// ID token server-side and returns only their own rate rows (every row, if
+// their Permissions row has Admin=TRUE), so no employee Google account ever
+// needs direct access to this sheet. Hours still come from the Main Sheet's
+// Raw Time Log (already public, shared with every other tab via
+// useRawTimeLog), joined against the (now server-filtered) Cost sheet rates
+// client-side, exactly as before. Independent of the shared FilterContext
+// date range — this tab has its own Month/Client/Employee filters instead,
+// matching the AM Performance tab's pattern.
 export default function CostAnalysisTab() {
-  const { accessToken } = useAuth()
+  const { firebaseUser } = useAuth()
   const { data: rawTimeLog = [], isLoading: rtlLoading, error: rtlError } = useRawTimeLog()
   const [costRates, setCostRates] = useState(null) // null while loading
   const [loadError, setLoadError] = useState(null)
@@ -171,13 +176,13 @@ export default function CostAnalysisTab() {
   const load = useCallback(async () => {
     setLoadError(null)
     try {
-      const rates = await fetchCostRates(accessToken)
+      const rates = await fetchSecureJson('/api/cost-data', firebaseUser)
       setCostRates(rates)
     } catch (err) {
       console.error('Failed to load Cost Analysis data:', err)
       setLoadError(err.message)
     }
-  }, [accessToken])
+  }, [firebaseUser])
 
   useEffect(() => { load() }, [load])
 
@@ -247,8 +252,8 @@ export default function CostAnalysisTab() {
       <div className="card p-8 text-center mt-6 space-y-3">
         <p className="text-red-400 font-semibold">{loadError || rtlError?.message}</p>
         <p className="text-xs dark:text-white/50 text-brand-500">
-          This usually means your Google account doesn't have (at least) Viewer access to the
-          Cost sheet in Google Drive, or your session's Sheets access token expired — try signing in again.
+          This usually means your account isn't set up correctly in the Access Sheet yet, or your
+          sign-in session expired — try signing in again, or contact an admin if the problem persists.
         </p>
         <button onClick={load} className="filter-input text-xs px-4 py-1.5">Retry</button>
       </div>
