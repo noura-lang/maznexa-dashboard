@@ -1,5 +1,6 @@
-import { verifyEmployee, HttpError } from '../lib/verifyEmployee.js'
-import { sheetsClient, fetchNamedRows, COST_SHEET_ID } from '../lib/googleSheets.js'
+// CommonJS (.cjs) — see lib/firebaseAdmin.cjs for why.
+const { verifyEmployee, HttpError } = require('../lib/verifyEmployee.cjs')
+const { sheetsClient, fetchNamedRows, COST_SHEET_ID } = require('../lib/googleSheets.cjs')
 
 // Row-level-filtered replacement for src/api/costSheetApi.js's client-side
 // fetchCostRates — the Cost sheet only holds per-employee hourly RATES
@@ -54,7 +55,7 @@ async function fetchCostRates(sheets) {
     .filter(r => r.monthKey && r.employee)
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     const { name, isAdmin } = await verifyEmployee(req)
     const sheets = sheetsClient()

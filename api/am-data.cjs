@@ -1,5 +1,6 @@
-import { verifyEmployee, HttpError } from '../lib/verifyEmployee.js'
-import { sheetsClient, fetchNamedRows, fetchRawValues, AM_SHEET_ID } from '../lib/googleSheets.js'
+// CommonJS (.cjs) — see lib/firebaseAdmin.cjs for why.
+const { verifyEmployee, HttpError } = require('../lib/verifyEmployee.cjs')
+const { sheetsClient, fetchNamedRows, fetchRawValues, AM_SHEET_ID } = require('../lib/googleSheets.cjs')
 
 // Row-level-filtered replacement for src/api/amSheetApi.js's client-side
 // fetchAmZoho/fetchAmTargets/fetchAmMarginEmployeeNames — those read the AM
@@ -68,7 +69,7 @@ async function fetchAmMarginNames(sheets) {
   return [...names]
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
     const { name, isAdmin } = await verifyEmployee(req)
     const sheets = sheetsClient()
