@@ -385,6 +385,18 @@ export function calcHoursByClient(rows) {
     .sort((a, b) => b.hours - a.hours)
 }
 
+// Employee-level breakdown of a Raw Time Log row subset — the shared
+// drill-down aggregation behind Hours/Billable tab click-throughs (e.g.
+// "which employees logged this client's hours"), analogous to
+// calcBillableByEmployee but without the billable/non-billable/exchange
+// split, for call sites that just need plain hours per employee.
+export function calcHoursByEmployee(rows) {
+  const byEmp = groupBy(rows, 'WHO')
+  return Object.entries(byEmp)
+    .map(([name, r]) => ({ name, team: r[0]?.TEAM || '', hours: round2(sumHours(r)) }))
+    .sort((a, b) => b.hours - a.hours)
+}
+
 export function calcHoursByTag(rows, tagWhitelist = null) {
   const scoped  = tagWhitelist ? rows.filter(r => tagWhitelist.includes(r['TIME LOG TAG'])) : rows
   const byTag   = groupBy(scoped, 'TIME LOG TAG')

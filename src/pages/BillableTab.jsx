@@ -6,6 +6,7 @@ import { DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
 import {
   filterRows, calcBillableByEmployee, calcBillableByTeam, calcBillableByPeriod,
   monthKey, quarterKey, toCategoryPercent, getUniqueProjects, round2, roundPct,
+  getRowCategory, calcHoursByEmployee,
 } from '../api/transformData'
 import MultiSelect from '../components/common/MultiSelect'
 import KPICard from '../components/common/KPICard'
@@ -81,14 +82,29 @@ function PieTooltip({ active, payload }) {
   )
 }
 
+// Recharts hands onClick handlers the rendered item's props, which usually
+// nest the original data entry under `.payload` — but not always depending
+// on which element fired. Checking both keeps every click site working
+// regardless of which Recharts component (Bar/Cell) triggered it.
+function chartPoint(d) {
+  return d?.payload ?? d
+}
+
+const CATEGORY_LABEL = { billable: 'Billable', nonBillable: 'Non-Billable', exchange: 'Exchange' }
+
 // Labels are hidden below a share-of-chart threshold so adjacent stacked
 // segments never overlap (e.g. a tiny Exchange sliver next to a big Billable one).
 // Always vertical bars — wrapped in a horizontally-scrollable canvas so views
 // with many categories (e.g. Top 15 Employees) stay legible instead of
-// cramming bars together.
-function HoursStackedChart({ data, labelKey, height = 360 }) {
+// cramming bars together. `onSegmentClick(category, row)` is optional —
+// wired to all three stacked Bar series so clicking any segment opens the
+// drill-down behind that category for that bar's category value (team,
+// employee, month, or quarter, depending on the active view).
+function HoursStackedChart({ data, labelKey, height = 360, onSegmentClick }) {
   const maxTotal = Math.max(...data.map(d => d.total), 1)
   const labelFmt = v => (v > 0 && v / maxTotal > 0.04 ? fmtHours(v) : '')
+  const cursor = onSegmentClick ? 'pointer' : undefined
+  const click = category => (onSegmentClick ? d => onSegmentClick(category, chartPoint(d)) : undefined)
 
   return (
     <div className="overflow-x-auto">
@@ -99,13 +115,13 @@ function HoursStackedChart({ data, labelKey, height = 360 }) {
             <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours} />
             <Tooltip content={<HoursTooltip />} />
             <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-            <Bar dataKey="billable" name="Billable" stackId="a" fill={BILLABLE_COLOR}>
+            <Bar dataKey="billable" name="Billable" stackId="a" fill={BILLABLE_COLOR} cursor={cursor} onClick={click('billable')}>
               <LabelList dataKey="billable" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
             </Bar>
-            <Bar dataKey="nonBillable" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR}>
+            <Bar dataKey="nonBillable" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR} cursor={cursor} onClick={click('nonBillable')}>
               <LabelList dataKey="nonBillable" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
             </Bar>
-            <Bar dataKey="exchange" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]}>
+            <Bar dataKey="exchange" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]} cursor={cursor} onClick={click('exchange')}>
               <LabelList dataKey="exchange" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
             </Bar>
           </BarChart>
@@ -115,8 +131,10 @@ function HoursStackedChart({ data, labelKey, height = 360 }) {
   )
 }
 
-function PercentStackedChart({ data, labelKey, height = 360 }) {
+function PercentStackedChart({ data, labelKey, height = 360, onSegmentClick }) {
   const labelFmt = v => (v > 2 ? `${fmtPct(v)}%` : '')
+  const cursor = onSegmentClick ? 'pointer' : undefined
+  const click = category => (onSegmentClick ? d => onSegmentClick(category, chartPoint(d)) : undefined)
 
   return (
     <div className="overflow-x-auto">
@@ -127,17 +145,107 @@ function PercentStackedChart({ data, labelKey, height = 360 }) {
             <YAxis domain={[0, 100]} tickFormatter={v => `${Math.round(v)}%`} tick={{ fill: 'currentColor', fontSize: 11 }} />
             <Tooltip content={<PercentTooltip />} />
             <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-            <Bar dataKey="billablePct" name="Billable" stackId="a" fill={BILLABLE_COLOR}>
+            <Bar dataKey="billablePct" name="Billable" stackId="a" fill={BILLABLE_COLOR} cursor={cursor} onClick={click('billable')}>
               <LabelList dataKey="billablePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
             </Bar>
-            <Bar dataKey="nonBillablePct" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR}>
+            <Bar dataKey="nonBillablePct" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR} cursor={cursor} onClick={click('nonBillable')}>
               <LabelList dataKey="nonBillablePct" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
             </Bar>
-            <Bar dataKey="exchangePct" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]}>
+            <Bar dataKey="exchangePct" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]} cursor={cursor} onClick={click('exchange')}>
               <LabelList dataKey="exchangePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+// Two shapes, same as Hours tab's drill-down: 'employees' (name/team/hours,
+// opened from the pie chart or a Team/Month/Quarter segment click) and 'raw'
+// (individual Raw Time Log rows, opened from an Employee-view segment click
+// or the Billable Details table). Same modal shell/style as every other
+// drill-down in the app.
+function DrillDownModal({ drillDown, onClose }) {
+  if (!drillDown) return null
+  const { kind, title, rows } = drillDown
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl
+                   dark:bg-brand-900 bg-white border dark:border-white/10 border-brand-200"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-brand-200">
+          <h3 className="text-sm font-semibold dark:text-white text-brand-900">{title}</h3>
+          <button
+            onClick={onClose}
+            className="text-lg leading-none px-2 dark:text-white/50 text-brand-400
+                       hover:dark:text-white hover:text-brand-800"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4">
+          {rows.length === 0 ? (
+            <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
+              No data found for this breakdown.
+            </p>
+          ) : kind === 'employees' ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b dark:border-white/10 border-brand-200">
+                  {['Employee', 'Team', 'Hours'].map(h => (
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
+                                           dark:text-white/50 text-brand-500">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.name} className={`border-b dark:border-white/5 border-brand-100
+                    ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
+                    <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{r.name}</td>
+                    <td className="py-2 px-3 dark:text-white/70 text-brand-600">{r.team}</td>
+                    <td className="py-2 px-3 font-semibold dark:text-white text-brand-900">{fmtHours(r.hours)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b dark:border-white/10 border-brand-200">
+                  {['Category', 'Client', 'Project', 'Date', 'Hours'].map(h => (
+                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
+                                           dark:text-white/50 text-brand-500 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className={`border-b dark:border-white/5 border-brand-100
+                    ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
+                    <td className="py-2 px-3 font-medium" style={{
+                      color: getRowCategory(r) === 'billable' ? BILLABLE_COLOR
+                        : getRowCategory(r) === 'nonBillable' ? NON_BILLABLE_COLOR : EXCHANGE_COLOR,
+                    }}>
+                      {CATEGORY_LABEL[getRowCategory(r)]}
+                    </td>
+                    <td className="py-2 px-3 dark:text-white/70 text-brand-600">{r.CLIENT || '—'}</td>
+                    <td className="py-2 px-3 dark:text-white/70 text-brand-600">{r.PROJECT || '—'}</td>
+                    <td className="py-2 px-3 dark:text-white/60 text-brand-600 whitespace-nowrap">{r.DATE || '—'}</td>
+                    <td className="py-2 px-3 font-semibold dark:text-white text-brand-900">{fmtHours(r.HOURS)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -187,9 +295,9 @@ export default function BillableTab() {
   )
 
   const pieData = [
-    { name: 'Billable',     value: totalBillable,    color: BILLABLE_COLOR },
-    { name: 'Non-Billable', value: totalNonBillable, color: NON_BILLABLE_COLOR },
-    { name: 'Exchange',     value: totalExchange,    color: EXCHANGE_COLOR },
+    { name: 'Billable',     value: totalBillable,    color: BILLABLE_COLOR,     category: 'billable' },
+    { name: 'Non-Billable', value: totalNonBillable, color: NON_BILLABLE_COLOR, category: 'nonBillable' },
+    { name: 'Exchange',     value: totalExchange,    color: EXCHANGE_COLOR,     category: 'exchange' },
   ]
 
   const [viewMode, setViewMode] = useState('team')
@@ -199,6 +307,36 @@ export default function BillableTab() {
     month:    { hours: byMonth,         pct: byMonthPct,        labelKey: 'period' },
     quarter:  { hours: byQuarter,       pct: byQuarterPct,      labelKey: 'period' },
   }[viewMode]
+
+  // Drill-down — click a pie slice to see who logged that category's hours;
+  // click a stacked bar segment to see the employee breakdown behind that
+  // category for the clicked Team/Month/Quarter (or, in the By Employee
+  // view, that one employee's raw rows for the category); click an employee
+  // row in the table below to see their full raw breakdown.
+  const [drillDown, setDrillDown] = useState(null)
+  function openCategoryDrillDown(category) {
+    const rows = scoped.filter(r => getRowCategory(r) === category)
+    setDrillDown({ kind: 'employees', title: `${CATEGORY_LABEL[category]} — Employee Breakdown`, rows: calcHoursByEmployee(rows) })
+  }
+  function openSegmentDrillDown(category, row) {
+    if (viewMode === 'employee') {
+      const rows = scoped.filter(r => r.WHO === row.name && getRowCategory(r) === category)
+      setDrillDown({ kind: 'raw', title: `${row.name} — ${CATEGORY_LABEL[category]}`, rows })
+      return
+    }
+    const label = viewMode === 'team' ? row.team : row.period
+    const rows = scoped.filter(r => {
+      if (getRowCategory(r) !== category) return false
+      if (viewMode === 'team') return r.TEAM === row.team
+      if (viewMode === 'month') return monthKey(r) === row.period
+      return quarterKey(r) === row.period
+    })
+    setDrillDown({ kind: 'employees', title: `${label} — ${CATEGORY_LABEL[category]} — Employee Breakdown`, rows: calcHoursByEmployee(rows) })
+  }
+  function openEmployeeRowDrillDown(name) {
+    const rows = scoped.filter(r => r.WHO === name)
+    setDrillDown({ kind: 'raw', title: `${name} — Time Log Breakdown`, rows })
+  }
 
   if (isLoading) return <LoadingSpinner message="Loading billable data..." />
   if (error) return (
@@ -263,6 +401,8 @@ export default function BillableTab() {
                 innerRadius={60}
                 outerRadius={95}
                 paddingAngle={2}
+                cursor="pointer"
+                onClick={d => openCategoryDrillDown(chartPoint(d).category)}
                 label={({ name, percent }) => `${name} ${fmtPct(percent * 100)}%`}
                 labelLine={false}
               >
@@ -306,7 +446,7 @@ export default function BillableTab() {
             { key: 'total', label: 'Total (hrs)', format: fmtHours },
           ]}
         >
-          {h => <HoursStackedChart data={viewData.hours} labelKey={viewData.labelKey} height={h} />}
+          {h => <HoursStackedChart data={viewData.hours} labelKey={viewData.labelKey} height={h} onSegmentClick={openSegmentDrillDown} />}
         </MaximizableChartCard>
         <MaximizableChartCard
           title={`Share of Time (%) — ${VIEWS.find(v => v.id === viewMode).label}`}
@@ -320,7 +460,7 @@ export default function BillableTab() {
             { key: 'exchangePct', label: 'Exchange %', format: fmtPct },
           ]}
         >
-          {h => <PercentStackedChart data={viewData.pct} labelKey={viewData.labelKey} height={h} />}
+          {h => <PercentStackedChart data={viewData.pct} labelKey={viewData.labelKey} height={h} onSegmentClick={openSegmentDrillDown} />}
         </MaximizableChartCard>
       </div>
 
@@ -357,7 +497,9 @@ export default function BillableTab() {
                   return (
                     <tr
                       key={emp.name}
-                      className={`border-b dark:border-white/5 border-brand-100
+                      onClick={() => openEmployeeRowDrillDown(emp.name)}
+                      className={`border-b dark:border-white/5 border-brand-100 cursor-pointer
+                        hover:dark:bg-white/5 hover:bg-brand-50
                         ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}
                     >
                       <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{emp.name}</td>
@@ -391,6 +533,8 @@ export default function BillableTab() {
           </div>
         )}
       </MaximizableChartCard>
+
+      <DrillDownModal drillDown={drillDown} onClose={() => setDrillDown(null)} />
     </div>
   )
 }
