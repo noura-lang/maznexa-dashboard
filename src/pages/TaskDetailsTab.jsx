@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTasks, useCapacity2026, useRawTimeLog } from '../hooks/useSheetData'
 import { useFilters } from '../context/FilterContext'
 import { useAuth } from '../context/AuthContext'
@@ -13,6 +13,7 @@ import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import Dropdown from '../components/common/Dropdown'
+import MultiSelect from '../components/common/MultiSelect'
 import TeamworkLink from '../components/common/TeamworkLink'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
@@ -488,6 +489,24 @@ export default function TaskDetailsTab() {
     [filteredTasks, rawTimeLog, filteredEmployeeNames]
   )
 
+  // "Total Hours by Tag" chart's own tag filter — multi-select (unlike the
+  // "Tasks by Employee — by Tag" chart above, this one already shows every
+  // tag side by side, so narrowing to a subset — including a single tag —
+  // fits its structure better than forcing one-at-a-time). Defaults to
+  // every tag selected, matching the chart's current unfiltered display.
+  const [selectedHoursTags, setSelectedHoursTags] = useState([])
+  const hoursTagsInitialized = useRef(false)
+  useEffect(() => {
+    if (!hoursTagsInitialized.current && availableTags.length > 0) {
+      setSelectedHoursTags(availableTags)
+      hoursTagsInitialized.current = true
+    }
+  }, [availableTags])
+  const filteredHoursByTag = useMemo(
+    () => hoursByTag.filter(row => selectedHoursTags.length === 0 || selectedHoursTags.includes(row.tag)),
+    [hoursByTag, selectedHoursTags]
+  )
+
   if (loadingTasks || loadingCap) return <LoadingSpinner message="Loading task data..." />
   if (errTasks || errCap) {
     return (
@@ -635,28 +654,36 @@ export default function TaskDetailsTab() {
         title="Total Hours by Tag"
         height={340}
         modalHeight={480}
-        exportRows={hoursByTag}
+        exportRows={filteredHoursByTag}
         exportColumns={[
           { key: 'tag', label: 'Tag' },
           { key: 'hours', label: 'Hours', format: v => Number(v ?? 0).toFixed(2) },
         ]}
+        headerExtra={
+          <MultiSelect
+            options={availableTags}
+            value={selectedHoursTags}
+            onChange={setSelectedHoursTags}
+            placeholder="All Tags"
+          />
+        }
       >
         {h => (
-          hoursByTag.length === 0 ? (
+          filteredHoursByTag.length === 0 ? (
             <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
               No tagged tasks match the current filters.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <div style={{ minWidth: Math.max(600, hoursByTag.length * 70) }}>
+              <div style={{ minWidth: Math.max(600, filteredHoursByTag.length * 70) }}>
                 <ResponsiveContainer width="100%" height={h}>
-                  <BarChart data={hoursByTag} margin={{ top: 24, bottom: 60 }}>
+                  <BarChart data={filteredHoursByTag} margin={{ top: 24, bottom: 60 }}>
                     <XAxis dataKey="tag" tick={{ fill: 'currentColor', fontSize: 11 }}
                       angle={-35} textAnchor="end" interval={0} />
                     <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={false} />
                     <Tooltip content={<GenericTooltip />} />
                     <Bar dataKey="hours" name="Logged Hours" radius={[6, 6, 0, 0]}>
-                      {hoursByTag.map(row => (
+                      {filteredHoursByTag.map(row => (
                         <Cell key={row.tag} fill={tagColor(row.tag)} />
                       ))}
                       <LabelList dataKey="hours" position="top" style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
