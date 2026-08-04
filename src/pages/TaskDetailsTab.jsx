@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   calcTaskSummaryByEmployee, getEmployeeTaskList, calcTaskCountByEmployeeForTagFiltered,
   getUniqueTaskTags, getTaskCustomFields, calcHoursByTaskTag, getTaskTimeLogs, round2,
+  filterTasksByDate,
 } from '../api/transformData'
 import { DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
 import { CHART_COLORS } from '../utils/chartColors'
@@ -405,9 +406,18 @@ export default function TaskDetailsTab() {
   const { permissions: rawPermissions } = useAuth()
   const permissions = rawPermissions || DEFAULT_DENIED_PERMISSIONS
 
+  // Respect the main filter bar's From/To date range, scoped by CREATED
+  // DATE — same field/function Weekly Report already uses for its own task
+  // date filtering. Every task-derived figure on this tab (KPIs, summary
+  // table, tag charts, drill-downs) is computed from this, not raw rawTasks.
+  const filteredTasks = useMemo(
+    () => filterTasksByDate(rawTasks, filters.startDate, filters.endDate, 'CREATED DATE'),
+    [rawTasks, filters.startDate, filters.endDate]
+  )
+
   const fullSummary = useMemo(
-    () => calcTaskSummaryByEmployee(rawTasks, capRows),
-    [rawTasks, capRows]
+    () => calcTaskSummaryByEmployee(filteredTasks, capRows),
+    [filteredTasks, capRows]
   )
 
   // Respect the main Team/Employee filter (Client isn't applicable — tasks
@@ -455,27 +465,27 @@ export default function TaskDetailsTab() {
   // Employee task-list drill-down
   const [selectedEmployee, setSelectedEmployee] = useState(null)
   const employeeTasks = useMemo(
-    () => (selectedEmployee ? getEmployeeTaskList(rawTasks, selectedEmployee) : []),
-    [rawTasks, selectedEmployee]
+    () => (selectedEmployee ? getEmployeeTaskList(filteredTasks, selectedEmployee) : []),
+    [filteredTasks, selectedEmployee]
   )
 
   // Task detail modal (opened from the employee modal's task list)
   const [selectedTask, setSelectedTask] = useState(null)
 
   // Tasks-per-employee-by-tag chart
-  const availableTags = useMemo(() => getUniqueTaskTags(rawTasks), [rawTasks])
+  const availableTags = useMemo(() => getUniqueTaskTags(filteredTasks), [filteredTasks])
   const [selectedTag, setSelectedTag] = useState(null)
   const effectiveTag = selectedTag ?? availableTags[0] ?? null
   const tagByEmployee = useMemo(
-    () => (effectiveTag ? calcTaskCountByEmployeeForTagFiltered(rawTasks, effectiveTag, filteredEmployeeNames) : []),
-    [rawTasks, effectiveTag, filteredEmployeeNames]
+    () => (effectiveTag ? calcTaskCountByEmployeeForTagFiltered(filteredTasks, effectiveTag, filteredEmployeeNames) : []),
+    [filteredTasks, effectiveTag, filteredEmployeeNames]
   )
 
   // Total Logged Hrs by tag, whole team combined — respects the same
   // Team/Employee filter as the summary table above, via filteredEmployeeNames.
   const hoursByTag = useMemo(
-    () => calcHoursByTaskTag(rawTasks, rawTimeLog, filteredEmployeeNames),
-    [rawTasks, rawTimeLog, filteredEmployeeNames]
+    () => calcHoursByTaskTag(filteredTasks, rawTimeLog, filteredEmployeeNames),
+    [filteredTasks, rawTimeLog, filteredEmployeeNames]
   )
 
   if (loadingTasks || loadingCap) return <LoadingSpinner message="Loading task data..." />

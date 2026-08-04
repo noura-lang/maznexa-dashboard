@@ -4,7 +4,7 @@ import { useFilters } from '../context/FilterContext'
 import {
   calcTaskSummaryByEmployee, calcTagGroupCounts, calcTaskCountsForTags,
   calcTaskCountByEmployeeForTagFiltered, calcHoursByEmployeeForTag,
-  getTasksForTag, getTasksForEmployeeAndTag,
+  getTasksForTag, getTasksForEmployeeAndTag, filterTasksByDate,
 } from '../api/transformData'
 import { CHART_COLORS } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
@@ -376,13 +376,22 @@ export default function TagsTab() {
   const { data: rawTimeLog = [] } = useRawTimeLog()
   const filters = useFilters()
 
+  // Respect the main filter bar's From/To date range, scoped by CREATED
+  // DATE — same field/function Weekly Report already uses for its own task
+  // date filtering. Every tag-derived figure on this tab is computed from
+  // this, not raw rawTasks.
+  const filteredTasks = useMemo(
+    () => filterTasksByDate(rawTasks, filters.startDate, filters.endDate, 'CREATED DATE'),
+    [rawTasks, filters.startDate, filters.endDate]
+  )
+
   // Same Team/Employee scoping as the Task Details tab: resolve each
   // assignee's team via Capacity (the Tasks sheet's own TEAM column is
   // unreliable), filter by the active filter bar selection, then only
   // count tasks with at least one assignee left standing.
   const fullSummary = useMemo(
-    () => calcTaskSummaryByEmployee(rawTasks, capRows),
-    [rawTasks, capRows]
+    () => calcTaskSummaryByEmployee(filteredTasks, capRows),
+    [filteredTasks, capRows]
   )
   const filteredEmployeeNames = useMemo(() => {
     const scoped = fullSummary.filter(e =>
@@ -393,26 +402,26 @@ export default function TagsTab() {
   }, [fullSummary, filters.selectedTeams, filters.selectedEmployees])
 
   const groups = useMemo(
-    () => calcTagGroupCounts(rawTasks, filteredEmployeeNames),
-    [rawTasks, filteredEmployeeNames]
+    () => calcTagGroupCounts(filteredTasks, filteredEmployeeNames),
+    [filteredTasks, filteredEmployeeNames]
   )
 
   const designPieData = useMemo(
-    () => calcTaskCountsForTags(rawTasks, DESIGN_PIE_TAGS, filteredEmployeeNames),
-    [rawTasks, filteredEmployeeNames]
+    () => calcTaskCountsForTags(filteredTasks, DESIGN_PIE_TAGS, filteredEmployeeNames),
+    [filteredTasks, filteredEmployeeNames]
   )
   const editPieData = useMemo(
-    () => calcTaskCountsForTags(rawTasks, EDIT_PIE_TAGS, filteredEmployeeNames),
-    [rawTasks, filteredEmployeeNames]
+    () => calcTaskCountsForTags(filteredTasks, EDIT_PIE_TAGS, filteredEmployeeNames),
+    [filteredTasks, filteredEmployeeNames]
   )
 
   const employeeTagCounts = useMemo(
     () => EMPLOYEE_TAG_CHARTS.map(c => ({
       ...c,
-      counts: calcTaskCountByEmployeeForTagFiltered(rawTasks, c.tag, filteredEmployeeNames),
-      hours: calcHoursByEmployeeForTag(rawTasks, rawTimeLog, c.tag, filteredEmployeeNames),
+      counts: calcTaskCountByEmployeeForTagFiltered(filteredTasks, c.tag, filteredEmployeeNames),
+      hours: calcHoursByEmployeeForTag(filteredTasks, rawTimeLog, c.tag, filteredEmployeeNames),
     })),
-    [rawTasks, rawTimeLog, filteredEmployeeNames]
+    [filteredTasks, rawTimeLog, filteredEmployeeNames]
   )
 
   // Drill-down modal state — pieModal for the two pie charts, barModal for
@@ -421,12 +430,12 @@ export default function TagsTab() {
   const [barModal, setBarModal] = useState(null)  // { employeeName, tag, isHours } | null
 
   const pieModalTasks = useMemo(
-    () => (pieModal ? getTasksForTag(rawTasks, pieModal.tag, filteredEmployeeNames) : null),
-    [rawTasks, filteredEmployeeNames, pieModal]
+    () => (pieModal ? getTasksForTag(filteredTasks, pieModal.tag, filteredEmployeeNames) : null),
+    [filteredTasks, filteredEmployeeNames, pieModal]
   )
   const barModalTasks = useMemo(
-    () => (barModal ? getTasksForEmployeeAndTag(rawTasks, rawTimeLog, barModal.employeeName, barModal.tag) : null),
-    [rawTasks, rawTimeLog, barModal]
+    () => (barModal ? getTasksForEmployeeAndTag(filteredTasks, rawTimeLog, barModal.employeeName, barModal.tag) : null),
+    [filteredTasks, rawTimeLog, barModal]
   )
   const barModalColumns = barModal?.isHours
     ? [...EMPLOYEE_TAG_MODAL_BASE_COLUMNS, LOGGED_HRS_COLUMN]
