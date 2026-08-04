@@ -754,6 +754,16 @@ function splitAssignees(value) {
     .filter(Boolean)
 }
 
+// Scopes raw task rows down to only tasks with at least one assignee in
+// `allowedNames` — the Team/Employee Data Scope enforcement point shared by
+// every task-based widget on Weekly Report (Task Status, Task Details pivot,
+// Overdue by Employee), mirroring the allowedNames pattern Task Details tab's
+// own tag chart already uses (calcTaskCountByEmployeeForTagFiltered below).
+export function filterTasksByAllowedNames(taskRows, allowedNames) {
+  if (!allowedNames) return taskRows
+  return taskRows.filter(row => splitAssignees(row['ASSIGNEE(S)']).some(n => allowedNames.has(n)))
+}
+
 export function calcTaskCountByEmployee(rows) {
   const counts = {}
   rows.forEach(row => {

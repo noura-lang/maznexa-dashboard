@@ -10,7 +10,7 @@ import {
   calcYTDUtilization, calcYTDMonthlyTrend, calcTeamUtilizationByDayOfWeek,
   utilizationColor, calcHoursByTag, calcTagHoursByEmployee, calcEmployeeHoursByTag,
   filterTasksByDate, calcTaskStatusByEmployee, buildTasksPivot, calcOverdueTaskCountByEmployee,
-  getEmployeeTasksInRange,
+  getEmployeeTasksInRange, calcTaskSummaryByEmployee, filterTasksByAllowedNames,
   calcCapacityByEmployeeForWeeklyReport, calcTeamUtilizationSummaryForWeeklyReport,
   calcCapacitySummaryForWeeklyReport, calcGrowthPct,
 } from '../api/transformData'
@@ -911,10 +911,28 @@ export default function WeeklyReport() {
   const [taskEndDate, setTaskEndDate]     = useState(format(new Date(), 'yyyy-MM-dd'))
   const [taskPage, setTaskPage] = useState(0)
 
-  const filteredTasks = useMemo(
-    () => filterTasksByDate(rawTasks, taskStartDate, taskEndDate, 'CREATED DATE'),
-    [rawTasks, taskStartDate, taskEndDate]
+  // Data Scope enforcement (My Data Only / My Team Only / All Employees) for
+  // every task-based widget below (Task Status, Task Details pivot, Overdue
+  // by Employee) — same allowedNames pattern Task Details tab's own charts
+  // already use. Built from the full, unfiltered rawTasks/capRows (not
+  // filteredTasks) so team resolution never depends on this section's own
+  // independent date filter.
+  const taskSummaryFull = useMemo(
+    () => calcTaskSummaryByEmployee(rawTasks, capRows),
+    [rawTasks, capRows]
   )
+  const filteredEmployeeNames = useMemo(() => {
+    const scoped = taskSummaryFull.filter(e =>
+      (filters.selectedTeams.length === 0 || filters.selectedTeams.includes(e.team)) &&
+      (filters.selectedEmployees.length === 0 || filters.selectedEmployees.includes(e.name))
+    )
+    return new Set(scoped.map(e => e.name))
+  }, [taskSummaryFull, filters.selectedTeams, filters.selectedEmployees])
+
+  const filteredTasks = useMemo(() => {
+    const byDate = filterTasksByDate(rawTasks, taskStartDate, taskEndDate, 'CREATED DATE')
+    return filterTasksByAllowedNames(byDate, filteredEmployeeNames)
+  }, [rawTasks, taskStartDate, taskEndDate, filteredEmployeeNames])
   const taskStatusByEmployee = useMemo(() => calcTaskStatusByEmployee(filteredTasks), [filteredTasks])
   const taskPivot = useMemo(
     () => buildTasksPivot(filteredTasks).sort((a, b) => (b.overdueDays ?? -1) - (a.overdueDays ?? -1)),
@@ -922,10 +940,10 @@ export default function WeeklyReport() {
   )
   const allTaskStatus = taskStatusByEmployee
 
-  // Overdue Tasks by Employee — same filteredTasks the Task Details table
-  // renders (Overdue Days > 0), Team looked up from the full, unfiltered
-  // Capacity rows so the Business Development/Trainees exclusion is reliable
-  // no matter what the main Team/Employee filter currently has selected.
+  // Overdue Tasks by Employee — same filteredTasks the Task Details pivot
+  // above renders (Overdue Days > 0, now also Team/Employee Data Scope
+  // scoped). Team looked up from the full, unfiltered Capacity rows so the
+  // Business Development/Trainees exclusion is reliable regardless of scope.
   const overdueByEmployee = useMemo(
     () => calcOverdueTaskCountByEmployee(filteredTasks, capRows),
     [filteredTasks, capRows]
