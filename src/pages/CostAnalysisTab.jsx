@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useRawTimeLog } from '../hooks/useSheetData'
 import { fetchSecureJson } from '../api/secureApi'
@@ -12,6 +12,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import KPICard from '../components/common/KPICard'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import Dropdown from '../components/common/Dropdown'
+import MultiSelect from '../components/common/MultiSelect'
 import { CHART_COLORS } from '../utils/chartColors'
 import {
   ComposedChart, BarChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -171,8 +172,8 @@ export default function CostAnalysisTab() {
   const [loadError, setLoadError] = useState(null)
 
   const [selectedMonth, setSelectedMonth] = useState('All')
-  const [selectedClient, setSelectedClient] = useState('All')
-  const [selectedEmployee, setSelectedEmployee] = useState('All')
+  const [selectedClients, setSelectedClients] = useState([])
+  const [selectedEmployees, setSelectedEmployees] = useState([])
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -198,9 +199,20 @@ export default function CostAnalysisTab() {
   const clientOptions = useMemo(() => getCostClientOptions(allRows), [allRows])
   const employeeOptions = useMemo(() => getCostEmployeeOptions(allRows), [allRows])
 
+  // Default to everything selected (same convention as the Team/Employee
+  // filters elsewhere) — only runs once the options first load.
+  const initialized = useRef(false)
+  useEffect(() => {
+    if (!initialized.current && clientOptions.length > 0 && employeeOptions.length > 0) {
+      setSelectedClients(clientOptions)
+      setSelectedEmployees(employeeOptions)
+      initialized.current = true
+    }
+  }, [clientOptions, employeeOptions])
+
   const filteredRows = useMemo(
-    () => filterCostRows(allRows, selectedMonth, selectedClient, selectedEmployee),
-    [allRows, selectedMonth, selectedClient, selectedEmployee]
+    () => filterCostRows(allRows, selectedMonth, selectedClients, selectedEmployees),
+    [allRows, selectedMonth, selectedClients, selectedEmployees]
   )
 
   const totals = useMemo(() => calcCostTotals(filteredRows), [filteredRows])
@@ -212,8 +224,8 @@ export default function CostAnalysisTab() {
   // month-by-month view) but still respects Client/Employee, same
   // convention as the AM Performance tab's monthly chart.
   const trendRows = useMemo(
-    () => filterCostRows(allRows, 'All', selectedClient, selectedEmployee),
-    [allRows, selectedClient, selectedEmployee]
+    () => filterCostRows(allRows, 'All', selectedClients, selectedEmployees),
+    [allRows, selectedClients, selectedEmployees]
   )
   const monthlyTrend = useMemo(() => calcMonthlyCostTrend(trendRows), [trendRows])
 
@@ -265,7 +277,7 @@ export default function CostAnalysisTab() {
     <div className="space-y-6 pt-4">
       {/* This tab's own filters — Month/Client/Employee, independent of the
           shared filter bar (matches the AM Performance tab's pattern) */}
-      <div className="card p-4 flex flex-wrap items-center gap-4">
+      <div className="card p-4 flex flex-wrap items-center gap-4 sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Month
@@ -280,13 +292,13 @@ export default function CostAnalysisTab() {
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Client
           </label>
-          <Dropdown options={['All', ...clientOptions]} value={selectedClient} onChange={setSelectedClient} />
+          <MultiSelect options={clientOptions} value={selectedClients} onChange={setSelectedClients} placeholder="All Clients" />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Employee
           </label>
-          <Dropdown options={['All', ...employeeOptions]} value={selectedEmployee} onChange={setSelectedEmployee} />
+          <MultiSelect options={employeeOptions} value={selectedEmployees} onChange={setSelectedEmployees} placeholder="All Employees" />
         </div>
       </div>
 

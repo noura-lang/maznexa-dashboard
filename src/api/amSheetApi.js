@@ -149,9 +149,11 @@ export function getAmEmployeeRoster(zohoRows, targetsRows, marginNames) {
   return [...names].sort((a, b) => a.localeCompare(b))
 }
 
-export function getAmClientsForEmployee(zohoRows, employee) {
+// Union of clients across every selected employee — the Company Name
+// filter's options depend on the current Account Manager selection.
+export function getAmClientsForEmployees(zohoRows, employees) {
   const clients = new Set()
-  zohoRows.forEach(r => { if (r.employee === employee && r.client) clients.add(r.client) })
+  zohoRows.forEach(r => { if (employees.includes(r.employee) && r.client) clients.add(r.client) })
   return [...clients].sort((a, b) => a.localeCompare(b))
 }
 
@@ -167,14 +169,14 @@ function weightedMarginPct(rows) {
   return revenue > 0 ? (grossProfit / revenue) * 100 : 0
 }
 
-// Rows for one employee, optionally narrowed to one month and/or one
-// client — the shared filter predicate behind every figure on the tab that
-// respects the Month/Company Name filters.
-export function filterAmRows(zohoRows, employee, month, client) {
+// Rows for any of the selected employees, optionally narrowed to one month
+// and/or a set of clients — the shared filter predicate behind every figure
+// on the tab that respects the Account Manager/Month/Company Name filters.
+export function filterAmRows(zohoRows, employees, month, clients) {
   return zohoRows.filter(r =>
-    r.employee === employee &&
+    employees.includes(r.employee) &&
     (!month || month === 'All' || r.month === month) &&
-    (!client || client === 'All' || r.client === client)
+    (!clients || clients.length === 0 || clients.includes(r.client))
   )
 }
 
@@ -191,15 +193,40 @@ export function calcAmTotals(filteredRows) {
 // (elapsedMonths), scoped to the Company Name filter but deliberately NOT
 // the Month filter, since this is a fixed "how's my margin trending this
 // year" reference figure rather than a per-month one.
-export function calcAmMarginYtd(zohoRows, employee, client, referenceDate = new Date()) {
+export function calcAmMarginYtd(zohoRows, employees, clients, referenceDate = new Date()) {
   const elapsedMonths = Math.min(12, Math.max(1, referenceDate.getMonth() + 1))
   const monthsElapsedSet = new Set(MONTHS.slice(0, elapsedMonths))
   const rows = zohoRows.filter(r =>
-    r.employee === employee &&
+    employees.includes(r.employee) &&
     monthsElapsedSet.has(r.month) &&
-    (!client || client === 'All' || r.client === client)
+    (!clients || clients.length === 0 || clients.includes(r.client))
   )
   return Math.round(weightedMarginPct(rows) * 10) / 10
+}
+
+// Combined target figures across every selected Account Manager — SAR
+// figures (gpBudget/gpTarget/gpStretch/dreamTarget) sum naturally across
+// employees, but the "…%" columns are each employee's own pre-set margin
+// percentage (not derived from the SAR figures), so there's no single
+// correct sum for multiple employees — averaged instead, the closest
+// single-number stand-in for "the selected AMs' target margins" that still
+// degrades to the exact original per-employee value when only one AM is
+// selected.
+export function calcAmCombinedTarget(targetsRows, employees) {
+  const rows = targetsRows.filter(t => employees.includes(t.employee))
+  if (rows.length === 0) return null
+  const sum = key => rows.reduce((s, r) => s + r[key], 0)
+  const avg = key => Math.round((sum(key) / rows.length) * 10) / 10
+  return {
+    gpBudget:       sum('gpBudget'),
+    gpFloorPct:     avg('gpFloorPct'),
+    gpTarget:       sum('gpTarget'),
+    gpTargetPct:    avg('gpTargetPct'),
+    gpStretch:      sum('gpStretch'),
+    gpStretchPct:   avg('gpStretchPct'),
+    dreamTarget:    sum('dreamTarget'),
+    dreamTargetPct: avg('dreamTargetPct'),
+  }
 }
 
 // Progress-to-target ring value: (Total Actual ÷ target value) × 100, per
@@ -231,11 +258,11 @@ export function calcAmTargetComparisonChart(target, totalActual) {
 // employee, in calendar order, optionally narrowed to one client via the
 // Company Name filter (the Month filter doesn't apply here — this chart IS
 // the month-by-month breakdown).
-export function calcAmMonthlyTrend(zohoRows, employee, client) {
+export function calcAmMonthlyTrend(zohoRows, employees, clients) {
   const byMonth = Object.fromEntries(MONTHS.map(m => [m, []]))
   zohoRows.forEach(row => {
-    if (row.employee !== employee) return
-    if (client && client !== 'All' && row.client !== client) return
+    if (!employees.includes(row.employee)) return
+    if (clients && clients.length > 0 && !clients.includes(row.client)) return
     if (!byMonth[row.month]) return
     byMonth[row.month].push(row)
   })

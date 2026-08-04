@@ -140,11 +140,11 @@ export function calcEmployeeCostRows(rawTimeLogRows, costRateMap) {
   })
 }
 
-export function filterCostRows(rows, month, client, employee) {
+export function filterCostRows(rows, month, clients, employees) {
   return rows.filter(r =>
     (!month || month === 'All' || r.monthKey === month) &&
-    (!client || client === 'All' || r.client === client) &&
-    (!employee || employee === 'All' || r.employee === employee)
+    (!clients || clients.length === 0 || clients.includes(r.client)) &&
+    (!employees || employees.length === 0 || employees.includes(r.employee))
   )
 }
 

@@ -1341,7 +1341,7 @@ export default function WeeklyReport() {
                     <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.capacity.toLocaleString()}</td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold" style={{ color: utilizationColor(emp.utilPct).bg }}>
+                        <span className="font-semibold dark:text-white text-brand-900">
                           {emp.utilPct}%
                         </span>
                         <UtilBadge pct={emp.utilPct} />

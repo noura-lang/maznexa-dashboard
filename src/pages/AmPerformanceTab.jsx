@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { fetchSecureJson } from '../api/secureApi'
 import {
-  getAmEmployeeRoster, getAmClientsForEmployee, filterAmRows,
-  calcAmTotals, calcAmMarginYtd, calcAmProgressPct,
+  getAmEmployeeRoster, getAmClientsForEmployees, filterAmRows,
+  calcAmTotals, calcAmMarginYtd, calcAmProgressPct, calcAmCombinedTarget,
   calcAmTargetComparisonChart, calcAmMonthlyTrend,
 } from '../api/amSheetApi'
 import LoadingSpinner from '../components/common/LoadingSpinner'
@@ -11,6 +11,7 @@ import KPICard from '../components/common/KPICard'
 import KPIRingCard from '../components/common/KPIRingCard'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import Dropdown from '../components/common/Dropdown'
+import MultiSelect from '../components/common/MultiSelect'
 import { CHART_COLORS } from '../utils/chartColors'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -75,9 +76,9 @@ export default function AmPerformanceTab() {
   const { firebaseUser } = useAuth()
   const [data, setData] = useState(null) // { zoho, targets, marginNames } | null
   const [loadError, setLoadError] = useState(null)
-  const [selectedEmployee, setSelectedEmployee] = useState(null)
+  const [selectedEmployees, setSelectedEmployees] = useState([])
   const [selectedMonth, setSelectedMonth] = useState('All')
-  const [selectedClient, setSelectedClient] = useState('All')
+  const [selectedClients, setSelectedClients] = useState([])
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -97,45 +98,46 @@ export default function AmPerformanceTab() {
     [data]
   )
 
+  // Default to every Account Manager selected (same "start with everything,
+  // narrowing reads as excluding" convention as the Team/Employee filters
+  // elsewhere) — only runs once the roster first loads.
+  const initialized = useRef(false)
   useEffect(() => {
-    if (roster.length > 0 && !roster.includes(selectedEmployee)) {
-      setSelectedEmployee(roster[0])
+    if (!initialized.current && roster.length > 0) {
+      setSelectedEmployees(roster)
+      setSelectedClients(getAmClientsForEmployees(data.zoho, roster))
+      initialized.current = true
     }
-  }, [roster, selectedEmployee])
+  }, [roster, data])
 
   const clientOptions = useMemo(
-    () => (data && selectedEmployee ? getAmClientsForEmployee(data.zoho, selectedEmployee) : []),
-    [data, selectedEmployee]
+    () => (data ? getAmClientsForEmployees(data.zoho, selectedEmployees) : []),
+    [data, selectedEmployees]
   )
 
-  // The Company Name filter's options depend on the selected employee —
-  // reset to "All" whenever she changes so a stale client from a previous
-  // employee never silently narrows the new one's numbers to nothing.
-  useEffect(() => { setSelectedClient('All') }, [selectedEmployee])
-
   const hasActiveData = useMemo(
-    () => !!(data && selectedEmployee && (
-      data.zoho.some(r => r.employee === selectedEmployee) ||
-      data.targets.some(t => t.employee === selectedEmployee)
+    () => !!(data && selectedEmployees.length > 0 && (
+      data.zoho.some(r => selectedEmployees.includes(r.employee)) ||
+      data.targets.some(t => selectedEmployees.includes(t.employee))
     )),
-    [data, selectedEmployee]
+    [data, selectedEmployees]
   )
 
   const target = useMemo(
-    () => data?.targets.find(t => t.employee === selectedEmployee) ?? null,
-    [data, selectedEmployee]
+    () => (data ? calcAmCombinedTarget(data.targets, selectedEmployees) : null),
+    [data, selectedEmployees]
   )
 
   const filteredRows = useMemo(
-    () => (data && selectedEmployee ? filterAmRows(data.zoho, selectedEmployee, selectedMonth, selectedClient) : []),
-    [data, selectedEmployee, selectedMonth, selectedClient]
+    () => (data && selectedEmployees.length > 0 ? filterAmRows(data.zoho, selectedEmployees, selectedMonth, selectedClients) : []),
+    [data, selectedEmployees, selectedMonth, selectedClients]
   )
 
   const totals = useMemo(() => calcAmTotals(filteredRows), [filteredRows])
 
   const marginYtd = useMemo(
-    () => (data && selectedEmployee ? calcAmMarginYtd(data.zoho, selectedEmployee, selectedClient) : 0),
-    [data, selectedEmployee, selectedClient]
+    () => (data && selectedEmployees.length > 0 ? calcAmMarginYtd(data.zoho, selectedEmployees, selectedClients) : 0),
+    [data, selectedEmployees, selectedClients]
   )
 
   const progressGP = calcAmProgressPct(totals.totalActual, target?.gpTarget)
@@ -148,8 +150,8 @@ export default function AmPerformanceTab() {
   )
 
   const monthlyTrend = useMemo(
-    () => (data && selectedEmployee ? calcAmMonthlyTrend(data.zoho, selectedEmployee, selectedClient) : []),
-    [data, selectedEmployee, selectedClient]
+    () => (data && selectedEmployees.length > 0 ? calcAmMonthlyTrend(data.zoho, selectedEmployees, selectedClients) : []),
+    [data, selectedEmployees, selectedClients]
   )
 
   if (data === null && !loadError) {
@@ -171,18 +173,23 @@ export default function AmPerformanceTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* This tab's own filters — Account Manager (kept from before) + Month
-          + Company Name, independent of the shared filter bar */}
-      <div className="card p-4 flex flex-wrap items-center gap-4">
+      {/* This tab's own filters — Account Manager + Month + Company Name,
+          independent of the shared filter bar. Account Manager/Company Name
+          are multi-select (same MultiSelect component/UX as the Team filter
+          elsewhere); Month stays single-select. */}
+      <div className="card p-4 flex flex-wrap items-center gap-4 sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Account Manager
           </label>
-          <Dropdown
+          <MultiSelect
             options={roster}
-            value={selectedEmployee || ''}
-            onChange={setSelectedEmployee}
-            placeholder={roster.length === 0 ? 'No employees found' : 'Select'}
+            value={selectedEmployees}
+            onChange={val => {
+              setSelectedEmployees(val)
+              setSelectedClients(getAmClientsForEmployees(data.zoho, val))
+            }}
+            placeholder={roster.length === 0 ? 'No employees found' : 'All Account Managers'}
           />
         </div>
 
@@ -197,17 +204,17 @@ export default function AmPerformanceTab() {
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Company Name
           </label>
-          <Dropdown options={['All', ...clientOptions]} value={selectedClient} onChange={setSelectedClient} />
+          <MultiSelect options={clientOptions} value={selectedClients} onChange={setSelectedClients} placeholder="All Clients" />
         </div>
 
-        {selectedEmployee && !hasActiveData && (
+        {selectedEmployees.length > 0 && !hasActiveData && (
           <span className="text-xs dark:text-white/40 text-brand-400">
-            No active data for this employee yet.
+            No active data for the selected Account Manager(s) yet.
           </span>
         )}
       </div>
 
-      {selectedEmployee && (
+      {selectedEmployees.length > 0 && (
         <>
           {/* Row 1 — fixed annual target values (Targets tab, independent of
               the Month/Company Name filters — they're per-employee only) */}
@@ -269,7 +276,7 @@ export default function AmPerformanceTab() {
               to the Company Name filter (this chart IS the month breakdown,
               so the Month filter itself doesn't narrow it further) */}
           <MaximizableChartCard
-            title={`Monthly Actual, Upsell & GP Margin - ${selectedEmployee}`}
+            title={`Monthly Actual, Upsell & GP Margin - ${selectedEmployees.join(', ')}`}
             height={340}
             modalHeight={480}
           >
