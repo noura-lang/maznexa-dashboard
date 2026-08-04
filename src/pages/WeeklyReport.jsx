@@ -20,6 +20,7 @@ import KPIRingCard from '../components/common/KPIRingCard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import TeamworkLink from '../components/common/TeamworkLink'
+import Dropdown from '../components/common/Dropdown'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
   Legend as RechartsLegend, PieChart, Pie,
@@ -888,22 +889,23 @@ export default function WeeklyReport() {
     return [Math.max(0, Math.floor((dataMin - pad) / 10) * 10), Math.ceil((dataMax + pad) / 10) * 10]
   }, [weeklyTrend])
 
+  const monthSelectOptions = [
+    ...(!availableTrendMonths.includes(effectiveTrendMonth)
+      ? [{ value: effectiveTrendMonth, label: format(new Date(trendYear, trendMonthNum - 1, 1), 'MMMM yyyy') }]
+      : []),
+    ...availableTrendMonths.map(m => {
+      const [y, mo] = m.split('-').map(Number)
+      return { value: m, label: format(new Date(y, mo - 1, 1), 'MMMM yyyy') }
+    }),
+  ]
+
   const monthSelect = (
-    <select
+    <Dropdown
+      options={monthSelectOptions}
       value={effectiveTrendMonth}
-      onChange={e => setTrendMonth(e.target.value)}
-      className="filter-input text-xs py-1.5"
-    >
-      {!availableTrendMonths.includes(effectiveTrendMonth) && (
-        <option value={effectiveTrendMonth}>
-          {format(new Date(trendYear, trendMonthNum - 1, 1), 'MMMM yyyy')}
-        </option>
-      )}
-      {availableTrendMonths.map(m => {
-        const [y, mo] = m.split('-').map(Number)
-        return <option key={m} value={m}>{format(new Date(y, mo - 1, 1), 'MMMM yyyy')}</option>
-      })}
-    </select>
+      onChange={setTrendMonth}
+      buttonClassName="text-xs py-1.5"
+    />
   )
 
   // Independent date filter for tasks — separate from the global filter bar

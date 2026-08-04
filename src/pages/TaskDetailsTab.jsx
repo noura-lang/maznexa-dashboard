@@ -11,6 +11,7 @@ import { CHART_COLORS } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import Dropdown from '../components/common/Dropdown'
 import TeamworkLink from '../components/common/TeamworkLink'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
@@ -569,14 +570,13 @@ export default function TaskDetailsTab() {
           { key: 'count', label: 'Tasks' },
         ]}
         headerExtra={
-          <select
+          <Dropdown
+            options={availableTags}
             value={effectiveTag || ''}
-            onChange={e => setSelectedTag(e.target.value)}
-            className="filter-input text-xs py-1.5"
-          >
-            {availableTags.length === 0 && <option value="">No tags found</option>}
-            {availableTags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
-          </select>
+            onChange={setSelectedTag}
+            placeholder={availableTags.length === 0 ? 'No tags found' : 'Select'}
+            buttonClassName="text-xs py-1.5"
+          />
         }
         height={380}
         modalHeight={520}

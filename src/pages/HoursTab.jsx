@@ -9,6 +9,7 @@ import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import Dropdown from '../components/common/Dropdown'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts'
@@ -252,24 +253,21 @@ export default function HoursTab() {
           headerExtra={
             <div className="flex items-center gap-2 text-sm">
               <label className="dark:text-white/50 text-brand-500">Rows:</label>
-              <select
+              <Dropdown
+                options={[{ value: 'WHO', label: 'Employee' }, { value: 'TEAM', label: 'Team' }]}
                 value={pivotRow}
-                onChange={e => setPivotRow(e.target.value)}
-                className="filter-input"
-              >
-                <option value="WHO">Employee</option>
-                <option value="TEAM">Team</option>
-              </select>
+                onChange={setPivotRow}
+              />
               <label className="dark:text-white/50 text-brand-500">Columns:</label>
-              <select
+              <Dropdown
+                options={[
+                  { value: 'CLIENT', label: 'Client' },
+                  { value: 'PROJECT', label: 'Project' },
+                  { value: 'TEAM', label: 'Team' },
+                ]}
                 value={pivotCol}
-                onChange={e => setPivotCol(e.target.value)}
-                className="filter-input"
-              >
-                <option value="CLIENT">Client</option>
-                <option value="PROJECT">Project</option>
-                <option value="TEAM">Team</option>
-              </select>
+                onChange={setPivotCol}
+              />
             </div>
           }
           exportRows={pivotData.data}

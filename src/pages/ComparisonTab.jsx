@@ -9,6 +9,7 @@ import {
   filterTimeLogByMonth, filterTimeLogByQuarter, calcHoursByProject,
 } from '../api/transformData'
 import MultiSelect from '../components/common/MultiSelect'
+import Dropdown from '../components/common/Dropdown'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import ChartTitleBadge from '../components/common/ChartTitleBadge'
@@ -778,21 +779,27 @@ export default function ComparisonTab() {
       <div className="card p-4 flex flex-wrap items-center gap-3 sticky top-0 z-40">
         <div className="flex items-center gap-2">
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Date</label>
-          <select value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="filter-input">
-            {DATE_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+          <Dropdown
+            options={DATE_OPTIONS.map(o => ({ value: o.id, label: o.label }))}
+            value={selectedDate}
+            onChange={setSelectedDate}
+          />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Month</label>
-          <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="filter-input">
-            {MONTH_SHORT.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
-          </select>
+          <Dropdown
+            options={MONTH_SHORT.map((name, i) => ({ value: i + 1, label: name }))}
+            value={selectedMonth}
+            onChange={setSelectedMonth}
+          />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Quarter</label>
-          <select value={selectedQuarter} onChange={e => setSelectedQuarter(e.target.value)} className="filter-input">
-            {QUARTER_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-          </select>
+          <Dropdown
+            options={QUARTER_OPTIONS.map(o => ({ value: o.id, label: o.label }))}
+            value={selectedQuarter}
+            onChange={setSelectedQuarter}
+          />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs dark:text-white/50 text-brand-500 font-medium">Team</label>

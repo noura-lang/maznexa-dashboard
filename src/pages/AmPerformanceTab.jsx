@@ -10,6 +10,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import KPICard from '../components/common/KPICard'
 import KPIRingCard from '../components/common/KPIRingCard'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import Dropdown from '../components/common/Dropdown'
 import { CHART_COLORS } from '../utils/chartColors'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -177,34 +178,26 @@ export default function AmPerformanceTab() {
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Account Manager
           </label>
-          <select
+          <Dropdown
+            options={roster}
             value={selectedEmployee || ''}
-            onChange={e => setSelectedEmployee(e.target.value)}
-            className="filter-input"
-          >
-            {roster.length === 0 && <option value="">No employees found</option>}
-            {roster.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
+            onChange={setSelectedEmployee}
+            placeholder={roster.length === 0 ? 'No employees found' : 'Select'}
+          />
         </div>
 
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Month
           </label>
-          <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="filter-input">
-            <option value="All">All</option>
-            {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
+          <Dropdown options={['All', ...MONTHS]} value={selectedMonth} onChange={setSelectedMonth} />
         </div>
 
         <div className="flex items-center gap-2">
           <label className="text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">
             Company Name
           </label>
-          <select value={selectedClient} onChange={e => setSelectedClient(e.target.value)} className="filter-input">
-            <option value="All">All</option>
-            {clientOptions.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
+          <Dropdown options={['All', ...clientOptions]} value={selectedClient} onChange={setSelectedClient} />
         </div>
 
         {selectedEmployee && !hasActiveData && (
