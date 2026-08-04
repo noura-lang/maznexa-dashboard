@@ -567,7 +567,6 @@ export default function TaskDetailsTab() {
         exportColumns={[
           { key: 'name', label: 'Employee' },
           { key: 'count', label: 'Tasks' },
-          { key: 'loggedHrs', label: 'Logged Hours', format: v => Number(v ?? 0).toFixed(2) },
         ]}
         headerExtra={
           <select
@@ -604,7 +603,6 @@ export default function TaskDetailsTab() {
                                         bg-white border border-brand-200 text-brand-900">
                           <p className="font-semibold mb-1">{label}</p>
                           <p className="text-xs">Tasks: <span className="font-bold">{p.count}</span></p>
-                          <p className="text-xs">Logged Hours: <span className="font-bold">{p.loggedHrs.toFixed(2)}</span></p>
                         </div>
                       )
                     }} />
