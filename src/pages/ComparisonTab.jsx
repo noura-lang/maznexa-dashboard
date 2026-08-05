@@ -15,6 +15,8 @@ import Greeting from '../components/common/Greeting'
 import ChartTitleBadge from '../components/common/ChartTitleBadge'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import SortableTh from '../components/common/SortableTh'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import { useSortableRows } from '../hooks/useSortableRows'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
@@ -22,13 +24,23 @@ import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, Cell, LabelList, PieChart, Pie,
-  ComposedChart, Line,
+  ComposedChart,
 } from 'recharts'
 
 const COLOR_2025 = '#6858a2' // primary purple
 const COLOR_2026 = '#8c8ffe' // secondary blue
-const GROWTH_COLOR = '#3d2b7a' // darkest purple, for the growth-% line
-const EMP_COUNT_COLOR = '#e6b800' // gold, distinct from the utilization bars/growth line sharing this chart
+// Team Utilization Comparison chart's 4-bar palette — every bar stays
+// strictly within the Maznexa purple family (brand purple #9354FF and its
+// tints/shades), light -> dark, so Hours/Utilization each read as a pair
+// while the 4 series stay visually distinct from each other. Growth is the
+// one explicit exception (green/red badge) — it needs to read "up or down"
+// at a glance, which no purple shade alone can convey.
+const TUC_HOURS_2025 = '#D6C2FF'
+const TUC_HOURS_2026 = '#B98CFF'
+const TUC_UTIL_2025  = '#9354FF'
+const TUC_UTIL_2026  = '#6B2FD1'
+const TUC_GROWTH_POS = '#22c55e'
+const TUC_GROWTH_NEG = '#ef4444'
 
 const fmtHours = v => Number(v ?? 0).toFixed(2)
 const fmtPct   = v => Math.round(Number(v ?? 0)).toString()
@@ -111,22 +123,36 @@ function PercentTooltip({ active, payload, label }) {
   )
 }
 
-// Team-by-Month combo chart's tooltip — every series is a percentage
-// (Utilization % bars, Growth % line) except the Employee Count bar, which
-// is a plain headcount; unlike HoursTooltip/PercentTooltip it isn't reused
-// elsewhere.
-function ComboTooltip({ active, payload, label }) {
+// Team Utilization Comparison chart's tooltip — shows every metric at full
+// precision on hover (the on-bar labels are rounded for legibility), plus
+// the same Growth badge shown permanently above the bar group. Colored
+// swatches (not colored text) identify each series, since a couple of the
+// lighter purple shades in TUC_* would be unreadable as text on a light
+// card background.
+function TeamUtilComparisonTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
+  const row = payload[0]?.payload
+  if (!row) return null
+  const rows = [
+    { dot: TUC_HOURS_2025, text: `Hours 2025: ${fmtHours(row.hours2025)}` },
+    { dot: TUC_HOURS_2026, text: `Hours 2026: ${fmtHours(row.hours2026)}` },
+    { dot: TUC_UTIL_2025,  text: `Utilization 2025: ${Number(row.util2025).toFixed(1)}%` },
+    { dot: TUC_UTIL_2026,  text: `Utilization 2026: ${Number(row.util2026).toFixed(1)}%` },
+  ]
   return (
     <div className="rounded-xl p-3 shadow-xl text-sm
                     dark:bg-brand-900 dark:border-white/10 dark:text-white
                     bg-white border border-brand-200 text-brand-900">
       <p className="font-semibold mb-2 max-w-[180px] truncate">{label}</p>
-      {payload.map(p => (
-        <p key={p.dataKey} className="text-xs" style={{ color: p.fill || p.stroke || p.color }}>
-          {p.name}: <span className="font-bold">{p.dataKey === 'empCount2026' ? p.value : `${fmtPct(p.value)}%`}</span>
+      {rows.map(r => (
+        <p key={r.text} className="text-xs flex items-center gap-1.5 dark:text-white/80 text-brand-700 mb-0.5">
+          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: r.dot }} />
+          {r.text}
         </p>
       ))}
+      <p className="text-xs mt-1.5 pt-1.5 border-t dark:border-white/10 border-brand-200 flex items-center gap-1.5">
+        Growth: <DeltaBadge delta={row.delta} />
+      </p>
     </div>
   )
 }
@@ -642,6 +668,20 @@ export default function ComparisonTab() {
   const teamByMonth     = useMemo(() => calcComparisonByTeam(cap2025Month, cap2026Month),     [cap2025Month, cap2026Month])
   const employeeByMonth = useMemo(() => calcComparisonByEmployee(cap2025Month, cap2026Month), [cap2025Month, cap2026Month])
 
+  // Team Utilization Comparison chart's own sort dropdown (deferred from the
+  // dashboard-wide chart-sort pass since this chart got fully redesigned
+  // here) — sorts by Utilization 2026 as the primary/most-current metric;
+  // the table below keeps its own independent header-click sort.
+  const [teamChartSortMode, setTeamChartSortMode] = useState(SORT_MODES.DESC)
+  const teamByMonthChartSorted = useMemo(
+    () => sortChartRows(teamByMonth, teamChartSortMode, 'util2026', 'team'),
+    [teamByMonth, teamChartSortMode]
+  )
+  const teamUtilAxisMax = useMemo(() => {
+    const maxVal = teamByMonth.reduce((m, t) => Math.max(m, t.util2025, t.util2026), 100)
+    return Math.ceil((maxVal + 25) / 10) * 10
+  }, [teamByMonth])
+
   const monthlyComparedExport = useMemo(
     () => monthlyCompared.map(row => ({ ...row, monthLabel: MONTH_FULL[row.month - 1] })),
     [monthlyCompared]
@@ -1092,63 +1132,89 @@ export default function ComparisonTab() {
           ⏳ {monthName} 2026 is still in progress — figures below reflect data through {lastDataDate}.
         </p>
       )}
-      {/* Team combo chart — bars = utilization % (left axis) + employee
-          count (own hidden axis, own scale), line = growth % (right axis).
-          Employee Count bars are clickable, same as the table's Employees
-          column below — opens the same drill-down modal. */}
+      {/* Team Utilization Comparison chart — 4 bars per team (Hours 2025,
+          Hours 2026, Utilization 2025, Utilization 2026), brand-purple-only
+          palette, with Growth % as a fixed colored badge above each group
+          (an invisible "anchor" bar pins every badge to the same height,
+          independent of how tall that team's own bars happen to be) instead
+          of a line crossing over the bars. */}
       <MaximizableChartCard
         title={`Team Utilization Comparison by Month — ${monthName}`}
-        height={Math.max(320, teamByMonth.length * 8) + 60}
-        modalHeight={Math.max(420, teamByMonth.length * 10) + 100}
-        exportRows={teamByMonth}
+        headerExtra={<ChartSortMenu value={teamChartSortMode} onChange={setTeamChartSortMode} />}
+        height={Math.max(420, teamByMonth.length * 14) + 100}
+        modalHeight={Math.max(560, teamByMonth.length * 16) + 140}
+        exportRows={teamByMonthChartSorted}
         exportColumns={[
           { key: 'team', label: 'Team' },
+          { key: 'hours2025', label: 'Hours 2025', format: fmtHours },
+          { key: 'hours2026', label: 'Hours 2026', format: fmtHours },
           { key: 'util2025', label: 'Utilization 2025 (%)', format: fmtPct },
           { key: 'util2026', label: 'Utilization 2026 (%)', format: fmtPct },
-          { key: 'empCount2026', label: 'Employee Count' },
           { key: 'delta', label: 'Growth %', format: fmtPct },
         ]}
       >
-        {h => (
-          <>
-            <p className="text-xs font-light dark:text-white/40 text-brand-400 mb-4 text-center">
-              Bars = utilization % and employee count. Line (right axis) = utilization growth %. Click an Employee Count bar to see who's counted in it.
-            </p>
-            <ResponsiveContainer width="100%" height={h}>
-              <ComposedChart data={teamByMonth} margin={{ top: 32, bottom: 60 }}>
-                <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" height={70} interval={0} />
-                <YAxis yAxisId="left" domain={[0, 100]} tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => `${Math.round(v)}%`}
-                  label={{ value: 'Utilization %', angle: -90, position: 'insideLeft', fill: 'currentColor', fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fill: GROWTH_COLOR, fontSize: 11 }} tickFormatter={v => `${Math.round(v)}%`}
-                  label={{ value: 'Growth %', angle: 90, position: 'insideRight', fill: GROWTH_COLOR, fontSize: 11 }} />
-                <YAxis yAxisId="count" hide allowDecimals={false} />
-                <Tooltip content={<ComboTooltip />} />
-                <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-                <Bar yAxisId="left" dataKey="util2025" name="Utilization % 2025" fill={COLOR_2025} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="util2025" position="top" formatter={v => `${fmtPct(v)}%`}
-                    style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
-                </Bar>
-                <Bar yAxisId="left" dataKey="util2026" name="Utilization % 2026" fill={COLOR_2026} radius={[3, 3, 0, 0]}>
-                  <LabelList dataKey="util2026" position="top" formatter={v => `${fmtPct(v)}%`}
-                    style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
-                </Bar>
-                <Bar
-                  yAxisId="count"
-                  dataKey="empCount2026"
-                  name="Employee Count"
-                  fill={EMP_COUNT_COLOR}
-                  radius={[3, 3, 0, 0]}
-                  onClick={entry => openTeamEmpDrillDown(entry.team, 2026)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <LabelList dataKey="empCount2026" position="top"
-                    style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
-                </Bar>
-                <Line yAxisId="right" type="monotone" dataKey="delta" name="Growth %" stroke={GROWTH_COLOR} strokeWidth={2} dot={{ r: 3, fill: GROWTH_COLOR }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </>
-        )}
+        {h => {
+          const chartData = teamByMonthChartSorted.map(t => ({ ...t, badgeAnchor: teamUtilAxisMax - 8 }))
+          const renderGrowthBadge = ({ x, y, width, index }) => {
+            const row = chartData[index]
+            if (!row) return null
+            const pos = row.delta >= 0
+            const text = `${pos ? '▲' : '▼'} ${fmtPct(Math.abs(row.delta))}%`
+            const badgeWidth = Math.max(42, text.length * 6.2 + 10)
+            const cx = x + width / 2
+            return (
+              <g>
+                <rect x={cx - badgeWidth / 2} y={y - 16} width={badgeWidth} height={16} rx={8}
+                  fill={pos ? TUC_GROWTH_POS : TUC_GROWTH_NEG} />
+                <text x={cx} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="#ffffff">
+                  {text}
+                </text>
+              </g>
+            )
+          }
+          return (
+            <>
+              <p className="text-xs font-light dark:text-white/40 text-brand-400 mb-4 text-center">
+                Bars = Hours and Utilization %, 2025 vs 2026. Badge above each group = utilization growth %. Hover any bar for exact figures.
+              </p>
+              <div className="overflow-x-auto">
+                <div style={{ minWidth: Math.max(700, chartData.length * 130) }}>
+                  <ResponsiveContainer width="100%" height={h}>
+                    <ComposedChart data={chartData} margin={{ top: 40, bottom: 70 }} barGap={2} barCategoryGap="22%">
+                      <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" height={80} interval={0} />
+                      <YAxis yAxisId="hours" tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => v.toLocaleString()}
+                        label={{ value: 'Hours', angle: -90, position: 'insideLeft', fill: 'currentColor', fontSize: 11 }} />
+                      <YAxis yAxisId="util" orientation="right" domain={[0, teamUtilAxisMax]} tick={{ fill: 'currentColor', fontSize: 11 }}
+                        tickFormatter={v => `${Math.round(v)}%`}
+                        label={{ value: 'Utilization %', angle: 90, position: 'insideRight', fill: 'currentColor', fontSize: 11 }} />
+                      <Tooltip content={<TeamUtilComparisonTooltip />} />
+                      <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
+                      <Bar yAxisId="hours" dataKey="hours2025" name="Hours 2025" fill={TUC_HOURS_2025} radius={[3, 3, 0, 0]}>
+                        <LabelList dataKey="hours2025" position="top" angle={-60} formatter={fmtHours}
+                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                      </Bar>
+                      <Bar yAxisId="hours" dataKey="hours2026" name="Hours 2026" fill={TUC_HOURS_2026} radius={[3, 3, 0, 0]}>
+                        <LabelList dataKey="hours2026" position="top" angle={-60} formatter={fmtHours}
+                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                      </Bar>
+                      <Bar yAxisId="util" dataKey="util2025" name="Utilization % 2025" fill={TUC_UTIL_2025} radius={[3, 3, 0, 0]}>
+                        <LabelList dataKey="util2025" position="top" angle={-60} formatter={v => `${fmtPct(v)}%`}
+                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                      </Bar>
+                      <Bar yAxisId="util" dataKey="util2026" name="Utilization % 2026" fill={TUC_UTIL_2026} radius={[3, 3, 0, 0]}>
+                        <LabelList dataKey="util2026" position="top" angle={-60} formatter={v => `${fmtPct(v)}%`}
+                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                      </Bar>
+                      <Bar yAxisId="util" dataKey="badgeAnchor" name="" fill="transparent" legendType="none" isAnimationActive={false}>
+                        <LabelList dataKey="badgeAnchor" content={renderGrowthBadge} />
+                      </Bar>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </>
+          )
+        }}
       </MaximizableChartCard>
 
       {/* Table (a): Team Utilization Comparison by Month */}
