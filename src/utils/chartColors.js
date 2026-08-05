@@ -26,3 +26,11 @@ export function sequentialColor(index, total) {
   const idx = Math.round(pos * (SEQUENTIAL_STOPS.length - 1))
   return SEQUENTIAL_STOPS[idx]
 }
+
+// The darkest utilization tier ("Professional", 95%+ — SEQUENTIAL_STOPS[5],
+// #3d2b7a) sits too close to the app's dark-mode card backgrounds
+// (#1a0e3d/#0f0824) to read as a filled bar, heatmap cell, or badge — swap
+// to this lighter, distinct purple + a light border in dark mode only.
+// Light mode keeps the original darkest-purple, which reads fine on white.
+export const DARK_PROFESSIONAL_COLOR  = '#B893FF'
+export const DARK_PROFESSIONAL_BORDER = '#E4D6FF'

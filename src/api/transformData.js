@@ -2,7 +2,7 @@ import {
   parseISO, isWithinInterval, startOfDay, endOfDay, getWeek, getYear, differenceInCalendarDays,
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, addWeeks, isAfter, format,
 } from 'date-fns'
-import { SEQUENTIAL_STOPS } from '../utils/chartColors'
+import { SEQUENTIAL_STOPS, DARK_PROFESSIONAL_COLOR } from '../utils/chartColors'
 
 // ─── Filtering ──────────────────────────────────────────────────────────────
 
@@ -525,13 +525,17 @@ export function calcCapacityByEmployeeForWeeklyReport(rows) {
 
 // ─── Utilization color coding ─────────────────────────────────────────────────
 
-export function utilizationColor(pct) {
+// `isDark` swaps the "Professional" tier's darkest-purple stop for a
+// lighter, distinct color — that stop otherwise sits too close to the
+// app's dark-mode backgrounds to read as a filled bar/cell/badge or as
+// text on a dark card. Every other tier is unaffected by theme.
+export function utilizationColor(pct, isDark = false) {
   if (pct < 60)  return { bg: SEQUENTIAL_STOPS[0], label: 'Low' }
   if (pct < 75)  return { bg: SEQUENTIAL_STOPS[1], label: 'Fair' }
   if (pct < 85)  return { bg: SEQUENTIAL_STOPS[2], label: 'Good' }
   if (pct < 90)  return { bg: SEQUENTIAL_STOPS[3], label: 'Very Good' }
   if (pct < 95)  return { bg: SEQUENTIAL_STOPS[4], label: 'Excellent' }
-  return           { bg: SEQUENTIAL_STOPS[5],      label: 'Professional' }
+  return           { bg: isDark ? DARK_PROFESSIONAL_COLOR : SEQUENTIAL_STOPS[5], label: 'Professional' }
 }
 
 // ─── Comparison (2025 vs 2026) ────────────────────────────────────────────────

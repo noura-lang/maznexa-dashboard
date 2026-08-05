@@ -1,13 +1,17 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 import { utilizationColor } from '../../api/transformData'
+import { useTheme } from '../../context/ThemeContext'
+import { DARK_PROFESSIONAL_BORDER } from '../../utils/chartColors'
 
 // Percentage KPI card — a progressive donut ring that fills to the value,
 // with the number centered inside. Used for every top-level utilization %
 // widget across the dashboard (Overall/YTD Utilization, Billable Rate, etc.)
 // instead of a plain text KPICard, per the round-widget redesign.
 export default function KPIRingCard({ label, value, sub, size = 132 }) {
+  const { isDark } = useTheme()
   const pct = Math.max(0, Math.min(100, Number(value) || 0))
-  const color = utilizationColor(pct).bg
+  const { bg: color, label: tier } = utilizationColor(pct, isDark)
+  const isProfessional = tier === 'Professional'
   const data = [{ v: pct }, { v: Math.max(0, 100 - pct) }]
 
   return (
@@ -32,7 +36,8 @@ export default function KPIRingCard({ label, value, sub, size = 132 }) {
               stroke="none"
               isAnimationActive={false}
             >
-              <Cell fill={color} />
+              <Cell fill={color} stroke={isDark && isProfessional ? DARK_PROFESSIONAL_BORDER : 'none'}
+                strokeWidth={isDark && isProfessional ? 1.5 : 0} />
               <Cell fill="rgba(140,143,254,0.15)" />
             </Pie>
           </PieChart>

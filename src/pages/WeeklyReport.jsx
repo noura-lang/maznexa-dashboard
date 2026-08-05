@@ -14,7 +14,7 @@ import {
   calcCapacityByEmployeeForWeeklyReport, calcTeamUtilizationSummaryForWeeklyReport,
   calcCapacitySummaryForWeeklyReport, calcGrowthPct,
 } from '../api/transformData'
-import { SEQUENTIAL_STOPS, CHART_COLORS, sequentialColor } from '../utils/chartColors'
+import { SEQUENTIAL_STOPS, CHART_COLORS, sequentialColor, DARK_PROFESSIONAL_COLOR, DARK_PROFESSIONAL_BORDER } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import KPIRingCard from '../components/common/KPIRingCard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
@@ -39,16 +39,32 @@ const UTIL_LEGEND = [
   { label: 'Professional',range: '> 95%',  color: SEQUENTIAL_STOPS[5] },
 ]
 
-const UTIL_LEGEND_EXTRA = (
-  <div className="flex flex-wrap gap-x-3 gap-y-1">
-    {UTIL_LEGEND.map(l => (
-      <span key={l.label} className="flex items-center gap-1 text-xs dark:text-white/60 text-brand-500">
-        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: l.color }} />
-        {l.label}
-      </span>
-    ))}
-  </div>
-)
+// Legend swatches follow the same dark-mode Professional-tier override as
+// the bars/heatmap/badge below — otherwise the legend dot would still show
+// the old near-invisible dark purple while every bar it labels shows the
+// new lighter one.
+function UtilLegend({ isDark }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1">
+      {UTIL_LEGEND.map(l => {
+        const isProfessional = l.label === 'Professional'
+        const color = isProfessional && isDark ? DARK_PROFESSIONAL_COLOR : l.color
+        return (
+          <span key={l.label} className="flex items-center gap-1 text-xs dark:text-white/60 text-brand-500">
+            <span
+              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+              style={{
+                background: color,
+                boxShadow: isProfessional && isDark ? `0 0 0 1px ${DARK_PROFESSIONAL_BORDER}` : undefined,
+              }}
+            />
+            {l.label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
 
 const COMPLETE_COLOR    = '#6858a2' // dark purple -> white label text
 const IN_PROGRESS_COLOR = '#8c8ffe' // light blue   -> dark label text
@@ -116,31 +132,53 @@ function BarDepthDefsRoot() {
             <stop offset="100%" stopColor={shadeColor(c, -18)} />
           </linearGradient>
         ))}
+        {/* Not part of CHART_COLORS — only used for the dark-mode Professional
+            utilization-tier override (see utilCellProps below). */}
+        <linearGradient id={barGradientId(DARK_PROFESSIONAL_COLOR)} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={shadeColor(DARK_PROFESSIONAL_COLOR, 18)} />
+          <stop offset="100%" stopColor={shadeColor(DARK_PROFESSIONAL_COLOR, -18)} />
+        </linearGradient>
       </defs>
     </svg>
   )
+}
+
+// Shared by every "Utilization" bar chart on this tab — resolves both the
+// (theme-aware) fill and, in dark mode for the Professional tier only, a
+// light border so that bar stays visually distinct from the card background.
+function utilCellProps(pct, isDark) {
+  const isProfessional = pct >= 95
+  return {
+    fill: barFill(utilizationColor(pct, isDark).bg, isDark),
+    stroke: isDark && isProfessional ? DARK_PROFESSIONAL_BORDER : undefined,
+    strokeWidth: isDark && isProfessional ? 1.5 : undefined,
+  }
 }
 
 const axisLabelStyle = { fill: 'currentColor', fontSize: 11, fontWeight: 600 }
 const fmtHours = v => Number(v ?? 0).toFixed(2)
 const fmtPct   = v => Math.round(Number(v ?? 0)).toString()
 
-function UtilBadge({ pct }) {
-  const { bg, label } = utilizationColor(pct)
+function UtilBadge({ pct, isDark }) {
+  const { bg, label } = utilizationColor(pct, isDark)
+  const isProfessional = label === 'Professional'
   return (
     <span
       className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold text-white"
-      style={{ backgroundColor: bg }}
+      style={{
+        backgroundColor: bg,
+        boxShadow: isProfessional && isDark ? `0 0 0 1px ${DARK_PROFESSIONAL_BORDER}` : undefined,
+      }}
     >
       {label}
     </span>
   )
 }
 
-function CustomTooltip({ active, payload, label }) {
+function CustomTooltip({ active, payload, label, isDark }) {
   if (!active || !payload?.length) return null
   const val = Math.round(payload[0]?.value ?? 0)
-  const { bg, label: lvl } = utilizationColor(val)
+  const { bg, label: lvl } = utilizationColor(val, isDark)
   return (
     <div className="rounded-xl p-3 shadow-xl text-sm
                     dark:bg-brand-900 dark:border-white/10 dark:text-white
@@ -215,7 +253,7 @@ const heatmapCellTextColor = pct => (pct < 85 ? '#1a0e3d' : '#ffffff')
 // to tell apart; each cell's own background is the standard utilization
 // color band, so magnitude reads the same way it does in every other chart
 // on this tab. Days a team never had capacity scheduled show "Off Day".
-function TeamUtilizationHeatmap({ matrix, teams, onCellClick }) {
+function TeamUtilizationHeatmap({ matrix, teams, onCellClick, isDark }) {
   if (teams.length === 0) {
     return (
       <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
@@ -259,7 +297,11 @@ function TeamUtilizationHeatmap({ matrix, teams, onCellClick }) {
                   style={
                     cell.isOffDay
                       ? undefined
-                      : { backgroundColor: utilizationColor(cell.utilPct).bg, color: heatmapCellTextColor(cell.utilPct) }
+                      : {
+                          backgroundColor: utilizationColor(cell.utilPct, isDark).bg,
+                          color: heatmapCellTextColor(cell.utilPct),
+                          boxShadow: isDark && cell.utilPct >= 95 ? `0 0 0 1px ${DARK_PROFESSIONAL_BORDER}` : undefined,
+                        }
                   }
                 >
                   {cell.isOffDay
@@ -289,7 +331,7 @@ function chartPoint(d) {
 // main Team/Employee filter applied by the caller — this modal never
 // re-derives or loosens that filtering itself, it only aggregates whatever
 // subset it's handed. Separate from any future single-employee detail modal.
-function PeriodDrillDownModal({ drillDown, onClose }) {
+function PeriodDrillDownModal({ drillDown, onClose, isDark }) {
   if (!drillDown) return null
   const { label, rows } = drillDown
 
@@ -328,7 +370,7 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
             <span>Total Logged: <b className="dark:text-white text-brand-900">{fmtHours(summary.hours)}</b></span>
             <span>Total Capacity: <b className="dark:text-white text-brand-900">{fmtHours(summary.capacity)}</b></span>
             <span>Overall Utilization:{' '}
-              <b style={{ color: utilizationColor(summary.util).bg }}>{summary.util}%</b>
+              <b style={{ color: utilizationColor(summary.util, isDark).bg }}>{summary.util}%</b>
             </span>
           </div>
         )}
@@ -362,7 +404,7 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
                         <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{t.team}</td>
                         <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(t.hours)}</td>
                         <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(t.capacity)}</td>
-                        <td className="py-2 px-3 font-semibold" style={{ color: utilizationColor(t.util).bg }}>
+                        <td className="py-2 px-3 font-semibold" style={{ color: utilizationColor(t.util, isDark).bg }}>
                           {t.util}%
                         </td>
                       </tr>
@@ -394,7 +436,7 @@ function PeriodDrillDownModal({ drillDown, onClose }) {
                         <td className="py-2 px-3 dark:text-white/70 text-brand-600">{e.team}</td>
                         <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(e.hours)}</td>
                         <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(e.capacity)}</td>
-                        <td className="py-2 px-3 font-semibold" style={{ color: utilizationColor(e.util).bg }}>
+                        <td className="py-2 px-3 font-semibold" style={{ color: utilizationColor(e.util, isDark).bg }}>
                           {e.util}%
                         </td>
                       </tr>
@@ -1098,10 +1140,10 @@ export default function WeeklyReport() {
             <BarChart data={ytdMonthly} margin={{ top: 24, bottom: 8 }}>
               <XAxis dataKey="month" tick={{ fill: 'currentColor', fontSize: 11 }} />
               <YAxis domain={[0, 110]} tickFormatter={v => `${Math.round(v)}%`} tick={{ fill: 'currentColor', fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip isDark={isDark} />} />
               <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleMonthBarClick}>
                 {ytdMonthly.map((entry, i) => (
-                  <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                  <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                 ))}
                 <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
               </Bar>
@@ -1127,7 +1169,7 @@ export default function WeeklyReport() {
             <LineChart data={weeklyTrend} margin={{ top: 28, right: 24, left: 0, bottom: 8 }}>
               <XAxis dataKey="week" tick={{ fill: 'currentColor', fontSize: 11 }} />
               <YAxis domain={trendDomain} tickFormatter={v => `${Math.round(v)}%`} tick={{ fill: 'currentColor', fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip isDark={isDark} />} />
               <Line
                 type="monotone"
                 dataKey="utilPct"
@@ -1170,6 +1212,7 @@ export default function WeeklyReport() {
             matrix={dayOfWeekHeatmap.matrix}
             teams={dayOfWeekHeatmap.teams}
             onCellClick={handleHeatmapCellClick}
+            isDark={isDark}
           />
         )}
       </MaximizableChartCard>
@@ -1192,10 +1235,10 @@ export default function WeeklyReport() {
               <BarChart data={top5Sorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
                   {top5Sorted.map((entry, i) => (
-                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -1220,10 +1263,10 @@ export default function WeeklyReport() {
               <BarChart data={bottom6Sorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
                   {bottom6Sorted.map((entry, i) => (
-                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -1236,7 +1279,7 @@ export default function WeeklyReport() {
       {/* Utilization by Team — full chart */}
       <MaximizableChartCard
         title="Utilization by Team"
-        headerExtra={<div className="flex items-center gap-4 flex-wrap">{UTIL_LEGEND_EXTRA}<ChartSortMenu value={byTeamSortMode} onChange={setByTeamSortMode} /></div>}
+        headerExtra={<div className="flex items-center gap-4 flex-wrap"><UtilLegend isDark={isDark} /><ChartSortMenu value={byTeamSortMode} onChange={setByTeamSortMode} /></div>}
         height={280}
         modalHeight={480}
         exportRows={byTeamSorted}
@@ -1250,10 +1293,10 @@ export default function WeeklyReport() {
             <BarChart data={byTeamSorted} margin={{ top: 24, bottom: 40 }}>
               <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
               <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip isDark={isDark} />} />
               <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
                 {byTeamSorted.map((entry, i) => (
-                  <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                  <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                 ))}
                 <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
               </Bar>
@@ -1281,10 +1324,10 @@ export default function WeeklyReport() {
               <BarChart data={top5EmpSorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
                   {top5EmpSorted.map((entry, i) => (
-                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -1310,10 +1353,10 @@ export default function WeeklyReport() {
               <BarChart data={bottom5EmpSorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
                   {bottom5EmpSorted.map((entry, i) => (
-                    <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                 </Bar>
@@ -1348,10 +1391,10 @@ export default function WeeklyReport() {
                   <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                     angle={-35} textAnchor="end" interval={0} />
                   <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip isDark={isDark} />} />
                   <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
                     {byEmployeeSorted.map((entry, i) => (
-                      <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
+                      <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                     ))}
                     <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
                   </Bar>
@@ -1408,7 +1451,7 @@ export default function WeeklyReport() {
                         <span className="font-semibold dark:text-white text-brand-900">
                           {emp.utilPct}%
                         </span>
-                        <UtilBadge pct={emp.utilPct} />
+                        <UtilBadge pct={emp.utilPct} isDark={isDark} />
                       </div>
                     </td>
                   </tr>
@@ -1716,7 +1759,7 @@ export default function WeeklyReport() {
         </>
       )}
 
-      <PeriodDrillDownModal drillDown={periodDrillDown} onClose={() => setPeriodDrillDown(null)} />
+      <PeriodDrillDownModal drillDown={periodDrillDown} onClose={() => setPeriodDrillDown(null)} isDark={isDark} />
       <EmployeeTasksModal drillDown={employeeTasksDrillDown} onClose={() => setEmployeeTasksDrillDown(null)} />
       <TagEmployeesModal drillDown={tagEmployeesDrillDown} onClose={() => setTagEmployeesDrillDown(null)} />
     </div>

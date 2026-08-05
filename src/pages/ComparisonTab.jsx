@@ -17,6 +17,7 @@ import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import SortableTh from '../components/common/SortableTh'
 import { useSortableRows } from '../hooks/useSortableRows'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -452,6 +453,7 @@ function TeamEmployeesModal({ drillDown, onClose }) {
 }
 
 export default function ComparisonTab() {
+  const { isDark } = useTheme()
   const { data: cap2025 = [], isLoading: l1, error: e1 } = useCapacity2025()
   const { data: cap2026 = [], isLoading: l2, error: e2 } = useCapacity2026()
   const { data: rawTimeLog = [] } = useRawTimeLog()
@@ -878,21 +880,25 @@ export default function ComparisonTab() {
       {/* Max/Min cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <MinMaxCard
+          isDark={isDark}
           title="Highest vs Lowest Monthly Utilization 2025"
           maxLabel={maxMonth2025 ? MONTH_FULL[maxMonth2025.month - 1] : '—'} maxValue={maxMonth2025?.util}
           minLabel={minMonth2025 ? MONTH_FULL[minMonth2025.month - 1] : '—'} minValue={minMonth2025?.util}
         />
         <MinMaxCard
+          isDark={isDark}
           title="Top vs Lowest Team Utilization 2025"
           maxLabel={maxTeam2025?.team || '—'} maxValue={maxTeam2025?.util}
           minLabel={minTeam2025?.team || '—'} minValue={minTeam2025?.util}
         />
         <MinMaxCard
+          isDark={isDark}
           title="Highest vs Lowest Monthly Utilization 2026"
           maxLabel={maxMonth2026 ? MONTH_FULL[maxMonth2026.month - 1] : '—'} maxValue={maxMonth2026?.util}
           minLabel={minMonth2026 ? MONTH_FULL[minMonth2026.month - 1] : '—'} minValue={minMonth2026?.util}
         />
         <MinMaxCard
+          isDark={isDark}
           title="Top vs Lowest Team Utilization 2026"
           maxLabel={maxTeam2026?.team || '—'} maxValue={maxTeam2026?.util}
           minLabel={minTeam2026?.team || '—'} minValue={minTeam2026?.util}
@@ -1298,7 +1304,7 @@ export default function ComparisonTab() {
   )
 }
 
-function MinMaxCard({ title, maxLabel, maxValue, minLabel, minValue }) {
+function MinMaxCard({ title, maxLabel, maxValue, minLabel, minValue, isDark }) {
   return (
     <div className="card p-5">
       <h3 className="text-xs font-medium uppercase tracking-wider mb-4 dark:text-white/50 text-brand-500">
@@ -1309,7 +1315,7 @@ function MinMaxCard({ title, maxLabel, maxValue, minLabel, minValue }) {
           <p className="text-xs font-light dark:text-white/40 text-brand-400">Highest</p>
           <div className="flex items-baseline justify-between">
             <span className="font-medium dark:text-white text-brand-900 truncate">{maxLabel}</span>
-            <span className="font-bold text-lg" style={{ color: maxValue !== undefined ? utilizationColor(maxValue).bg : undefined }}>
+            <span className="font-bold text-lg" style={{ color: maxValue !== undefined ? utilizationColor(maxValue, isDark).bg : undefined }}>
               {maxValue !== undefined ? `${fmtPct(maxValue)}%` : '—'}
             </span>
           </div>
@@ -1318,7 +1324,7 @@ function MinMaxCard({ title, maxLabel, maxValue, minLabel, minValue }) {
           <p className="text-xs font-light dark:text-white/40 text-brand-400">Lowest</p>
           <div className="flex items-baseline justify-between">
             <span className="font-medium dark:text-white text-brand-900 truncate">{minLabel}</span>
-            <span className="font-bold text-lg" style={{ color: minValue !== undefined ? utilizationColor(minValue).bg : undefined }}>
+            <span className="font-bold text-lg" style={{ color: minValue !== undefined ? utilizationColor(minValue, isDark).bg : undefined }}>
               {minValue !== undefined ? `${fmtPct(minValue)}%` : '—'}
             </span>
           </div>
