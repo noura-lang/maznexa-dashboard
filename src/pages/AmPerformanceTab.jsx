@@ -261,8 +261,14 @@ export default function AmPerformanceTab() {
                   <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => v.toLocaleString()} />
                   <Tooltip content={<GenericTooltip />} />
                   <RechartsLegend content={<BrandLegend />} />
-                  <Bar dataKey="targetValue" name="Target Value" fill={CHART_COLORS[1]} radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="actual" name="Total Actual" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="targetValue" name="Target Value" fill={CHART_COLORS[1]} radius={[6, 6, 0, 0]}>
+                    <LabelList dataKey="targetValue" position="top" formatter={fmtSAR}
+                      style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                  </Bar>
+                  <Bar dataKey="actual" name="Total Actual" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]}>
+                    <LabelList dataKey="actual" position="top" formatter={fmtSAR}
+                      style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                  </Bar>
                   <Line dataKey="remaining" name="Remaining to Target" stroke={ACCENT_LINE} strokeWidth={2} dot={{ r: 4 }}>
                     <LabelList dataKey="remaining" position="top" formatter={fmtSAR}
                       style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
@@ -291,8 +297,14 @@ export default function AmPerformanceTab() {
                     tickFormatter={v => `${v}%`} />
                   <Tooltip content={<GenericTooltip />} />
                   <RechartsLegend content={<BrandLegend />} />
-                  <Bar yAxisId="left" dataKey="upsell" name="Total Upsell (SAR)" fill={CHART_COLORS[2]} radius={[6, 6, 0, 0]} />
-                  <Bar yAxisId="left" dataKey="actual" name="Total Actual (SAR)" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]} />
+                  <Bar yAxisId="left" dataKey="upsell" name="Total Upsell (SAR)" fill={CHART_COLORS[2]} radius={[6, 6, 0, 0]}>
+                    <LabelList dataKey="upsell" position="top" formatter={fmtSAR} angle={-60}
+                      style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                  </Bar>
+                  <Bar yAxisId="left" dataKey="actual" name="Total Actual (SAR)" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]}>
+                    <LabelList dataKey="actual" position="top" formatter={fmtSAR} angle={-60}
+                      style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                  </Bar>
                   <Line yAxisId="right" dataKey="gpMarginPct" name="GP Margin %" stroke={ACCENT_LINE} strokeWidth={2} dot={{ r: 3 }}>
                     <LabelList dataKey="gpMarginPct" position="top" formatter={v => `${v}%`}
                       style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />

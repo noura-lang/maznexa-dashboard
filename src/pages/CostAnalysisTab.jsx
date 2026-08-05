@@ -357,9 +357,15 @@ export default function CostAnalysisTab() {
               <Tooltip content={<GenericTooltip />} />
               <RechartsLegend content={<BrandLegend />} />
               <Bar dataKey="actualCost" name="Actual Cost" fill={CHART_COLORS[5]} radius={[4, 4, 0, 0]}
-                onClick={d => openClientDrillDown(d.client)} cursor="pointer" />
+                onClick={d => openClientDrillDown(d.client)} cursor="pointer">
+                <LabelList dataKey="actualCost" position="top" formatter={fmtSAR} angle={-60}
+                  style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+              </Bar>
               <Bar dataKey="bufferedCost" name="Buffered Cost" fill={CHART_COLORS[2]} radius={[4, 4, 0, 0]}
-                onClick={d => openClientDrillDown(d.client)} cursor="pointer" />
+                onClick={d => openClientDrillDown(d.client)} cursor="pointer">
+                <LabelList dataKey="bufferedCost" position="top" formatter={fmtSAR} angle={-60}
+                  style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         )}
@@ -503,8 +509,14 @@ export default function CostAnalysisTab() {
               <YAxis yAxisId="right" orientation="right" tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => `${v}%`} />
               <Tooltip content={<GenericTooltip />} />
               <RechartsLegend content={<BrandLegend />} />
-              <Bar yAxisId="left" dataKey="actualCost" name="Actual Cost" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]} />
-              <Bar yAxisId="left" dataKey="bufferedCost" name="Buffered Cost" fill={CHART_COLORS[2]} radius={[6, 6, 0, 0]} />
+              <Bar yAxisId="left" dataKey="actualCost" name="Actual Cost" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]}>
+                <LabelList dataKey="actualCost" position="top" formatter={fmtSAR}
+                  style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+              </Bar>
+              <Bar yAxisId="left" dataKey="bufferedCost" name="Buffered Cost" fill={CHART_COLORS[2]} radius={[6, 6, 0, 0]}>
+                <LabelList dataKey="bufferedCost" position="top" formatter={fmtSAR}
+                  style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+              </Bar>
               <Line yAxisId="right" dataKey="growthPct" name="Growth %" stroke={ACCENT_LINE} strokeWidth={2} dot={{ r: 3 }}>
                 <LabelList dataKey="growthPct" position="top" formatter={v => (v === null || v === undefined ? '' : `${v}%`)}
                   style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
