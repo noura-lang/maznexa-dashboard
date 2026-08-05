@@ -31,12 +31,16 @@ const COLOR_2025 = '#6858a2' // primary purple
 const COLOR_2026 = '#8c8ffe' // secondary blue
 // Team Utilization Comparison chart's 4-bar palette — every bar stays
 // strictly within the Maznexa purple family (brand purple #9354FF and its
-// tints/shades), light -> dark, so Hours/Utilization each read as a pair
-// while the 4 series stay visually distinct from each other. Growth is the
-// one explicit exception (green/red badge) — it needs to read "up or down"
-// at a glance, which no purple shade alone can convey.
-const TUC_HOURS_2025 = '#D6C2FF'
-const TUC_HOURS_2026 = '#B98CFF'
+// tints/shades) so Hours/Utilization each read as a pair while the 4 series
+// stay visually distinct from each other. Growth is the one explicit
+// exception (green/red badge) — it needs to read "up or down" at a glance,
+// which no purple shade alone can convey. The two Hours shades are darker
+// than a plain light->dark ramp would suggest — their labels render INSIDE
+// the bar in white (see below), which needs real contrast to read; the
+// Utilization shades don't have that constraint since their labels sit
+// above the bar against the card background instead.
+const TUC_HOURS_2025 = '#9A5EFF'
+const TUC_HOURS_2026 = '#7A3FE8'
 const TUC_UTIL_2025  = '#9354FF'
 const TUC_UTIL_2026  = '#6B2FD1'
 const TUC_GROWTH_POS = '#22c55e'
@@ -186,8 +190,11 @@ function NoDataYet({ monthName, lastDataMonthName }) {
   )
 }
 
-// Utilization donut with a big centered percentage.
-function UtilDonut({ label, value, color }) {
+// Utilization donut with a big centered percentage. `trackColor`/`textColor`
+// default to the original values so only a caller that explicitly overrides
+// them (the 2025 ring — see below) changes appearance; the 2026 ring is
+// untouched.
+function UtilDonut({ label, value, color, trackColor = 'rgba(140,143,254,0.12)', textColor }) {
   const data = [{ v: value }, { v: Math.max(0, 100 - value) }]
   return (
     <div className="relative flex flex-col items-center">
@@ -195,12 +202,12 @@ function UtilDonut({ label, value, color }) {
         <PieChart>
           <Pie data={data} dataKey="v" innerRadius={68} outerRadius={90} startAngle={90} endAngle={-270} stroke="none">
             <Cell fill={color} />
-            <Cell fill="rgba(140,143,254,0.12)" />
+            <Cell fill={trackColor} />
           </Pie>
         </PieChart>
       </ResponsiveContainer>
       <div className="absolute inset-0 top-0 flex flex-col items-center justify-center" style={{ height: 200 }}>
-        <span className="text-3xl font-bold" style={{ color }}>{fmtPct(value)}%</span>
+        <span className="text-3xl font-bold" style={{ color: textColor || color }}>{fmtPct(value)}%</span>
         <span className="text-xs dark:text-white/50 text-brand-500 mt-1">{label}</span>
       </div>
     </div>
@@ -905,7 +912,8 @@ export default function ComparisonTab() {
           <ChartTitleBadge>Utilization — {monthName}</ChartTitleBadge>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <UtilDonut label={`Utilization ${monthName} 2025`} value={monthSummary2025.util} color={COLOR_2025} />
+          <UtilDonut label={`Utilization ${monthName} 2025`} value={monthSummary2025.util}
+            color="#CECBF6" trackColor="#2a1f4a" textColor="#ffffff" />
           {isMonthFuture ? (
             <NoDataYet monthName={monthName} lastDataMonthName={MONTH_FULL[lastDataMonth - 1]} />
           ) : (
@@ -1160,13 +1168,13 @@ export default function ComparisonTab() {
             if (!row) return null
             const pos = row.delta >= 0
             const text = `${pos ? '▲' : '▼'} ${fmtPct(Math.abs(row.delta))}%`
-            const badgeWidth = Math.max(42, text.length * 6.2 + 10)
+            const badgeWidth = Math.max(48, text.length * 7.2 + 12)
             const cx = x + width / 2
             return (
               <g>
-                <rect x={cx - badgeWidth / 2} y={y - 16} width={badgeWidth} height={16} rx={8}
+                <rect x={cx - badgeWidth / 2} y={y - 19} width={badgeWidth} height={19} rx={9.5}
                   fill={pos ? TUC_GROWTH_POS : TUC_GROWTH_NEG} />
-                <text x={cx} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={700} fill="#ffffff">
+                <text x={cx} y={y - 5} textAnchor="middle" fontSize={12} fontWeight={700} fill="#ffffff">
                   {text}
                 </text>
               </g>
@@ -1190,19 +1198,19 @@ export default function ComparisonTab() {
                       <Tooltip content={<TeamUtilComparisonTooltip />} />
                       <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
                       <Bar yAxisId="hours" dataKey="hours2025" name="Hours 2025" fill={TUC_HOURS_2025} radius={[3, 3, 0, 0]}>
-                        <LabelList dataKey="hours2025" position="top" angle={-60} formatter={fmtHours}
-                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                        <LabelList dataKey="hours2025" position="insideTop" angle={-90} formatter={fmtHours}
+                          style={{ fill: '#ffffff', fontSize: 9, fontWeight: 600 }} />
                       </Bar>
                       <Bar yAxisId="hours" dataKey="hours2026" name="Hours 2026" fill={TUC_HOURS_2026} radius={[3, 3, 0, 0]}>
-                        <LabelList dataKey="hours2026" position="top" angle={-60} formatter={fmtHours}
-                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                        <LabelList dataKey="hours2026" position="insideTop" angle={-90} formatter={fmtHours}
+                          style={{ fill: '#ffffff', fontSize: 9, fontWeight: 600 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="util2025" name="Utilization % 2025" fill={TUC_UTIL_2025} radius={[3, 3, 0, 0]}>
-                        <LabelList dataKey="util2025" position="top" angle={-60} formatter={v => `${fmtPct(v)}%`}
+                        <LabelList dataKey="util2025" position="top" formatter={v => `${fmtPct(v)}%`}
                           style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="util2026" name="Utilization % 2026" fill={TUC_UTIL_2026} radius={[3, 3, 0, 0]}>
-                        <LabelList dataKey="util2026" position="top" angle={-60} formatter={v => `${fmtPct(v)}%`}
+                        <LabelList dataKey="util2026" position="top" formatter={v => `${fmtPct(v)}%`}
                           style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="badgeAnchor" name="" fill="transparent" legendType="none" isAnimationActive={false}>
