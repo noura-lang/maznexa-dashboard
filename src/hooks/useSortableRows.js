@@ -31,9 +31,5 @@ export function useSortableRows(rows, initialKey, initialDir = 'desc') {
     return arr
   }, [rows, sortKey, sortDir])
 
-  function sortArrow(key) {
-    return sortKey === key ? (sortDir === 'desc' ? ' ▼' : ' ▲') : ''
-  }
-
-  return { sorted, sortKey, sortDir, handleSort, sortArrow }
+  return { sorted, sortKey, sortDir, handleSort }
 }

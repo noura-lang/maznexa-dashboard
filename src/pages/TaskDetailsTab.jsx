@@ -12,6 +12,7 @@ import { CHART_COLORS } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import SortableTh from '../components/common/SortableTh'
 import ChartSortMenu from '../components/common/ChartSortMenu'
 import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import Dropdown from '../components/common/Dropdown'
@@ -549,16 +550,9 @@ export default function TaskDetailsTab() {
             <thead>
               <tr className="border-b dark:border-white/10 border-brand-200">
                 {SUMMARY_COLUMNS.map(col => (
-                  <th
-                    key={col.key}
-                    onClick={() => handleSort(col.key)}
-                    className={`py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 whitespace-nowrap
-                               dark:hover:text-white hover:text-brand-800
-                               ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                  >
-                    {col.label} {sortKey === col.key ? (sortDir === 'desc' ? '▼' : '▲') : ''}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} align={col.align} className="whitespace-nowrap"
+                    active={sortKey === col.key} dir={sortDir}
+                    onClick={() => handleSort(col.key)} />
                 ))}
               </tr>
             </thead>

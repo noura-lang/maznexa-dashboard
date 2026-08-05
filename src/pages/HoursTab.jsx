@@ -11,6 +11,7 @@ import Greeting from '../components/common/Greeting'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import Dropdown from '../components/common/Dropdown'
 import ChartSortMenu from '../components/common/ChartSortMenu'
+import SortableTh, { SortIndicator } from '../components/common/SortableTh'
 import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import { useSortableRows } from '../hooks/useSortableRows'
 import {
@@ -285,15 +286,13 @@ export default function HoursTab() {
                     <tr className="border-b dark:border-white/10 border-brand-200">
                       <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">#</th>
                       {[
-                        { key: 'client', label: 'Client', align: 'text-left' },
-                        { key: 'hours', label: 'Hours', align: 'text-right' },
-                        { key: 'pct', label: '%', align: 'text-right' },
+                        { key: 'client', label: 'Client', align: 'left' },
+                        { key: 'hours', label: 'Hours', align: 'right' },
+                        { key: 'pct', label: '%', align: 'right' },
                       ].map(col => (
-                        <th key={col.key} onClick={() => clientTableSort.handleSort(col.key)}
-                          className={`py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                     dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 ${col.align}`}>
-                          {col.label}{clientTableSort.sortArrow(col.key)}
-                        </th>
+                        <SortableTh key={col.key} label={col.label} align={col.align}
+                          active={clientTableSort.sortKey === col.key} dir={clientTableSort.sortDir}
+                          onClick={() => clientTableSort.handleSort(col.key)} />
                       ))}
                     </tr>
                   </thead>
@@ -373,15 +372,13 @@ export default function HoursTab() {
                     <tr className="border-b dark:border-white/10 border-brand-200">
                       <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">#</th>
                       {[
-                        { key: 'project', label: 'Project', align: 'text-left' },
-                        { key: 'client', label: 'Client', align: 'text-left' },
-                        { key: 'hours', label: 'Hours', align: 'text-right' },
+                        { key: 'project', label: 'Project', align: 'left' },
+                        { key: 'client', label: 'Client', align: 'left' },
+                        { key: 'hours', label: 'Hours', align: 'right' },
                       ].map(col => (
-                        <th key={col.key} onClick={() => projectTableSort.handleSort(col.key)}
-                          className={`py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                     dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 ${col.align}`}>
-                          {col.label}{projectTableSort.sortArrow(col.key)}
-                        </th>
+                        <SortableTh key={col.key} label={col.label} align={col.align}
+                          active={projectTableSort.sortKey === col.key} dir={projectTableSort.sortDir}
+                          onClick={() => projectTableSort.handleSort(col.key)} />
                       ))}
                     </tr>
                   </thead>
@@ -448,22 +445,25 @@ export default function HoursTab() {
                 <thead className="sticky top-0">
                   <tr className="dark:bg-brand-900/90 bg-white">
                     <th onClick={() => pivotTableSort.handleSort('label')}
-                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                   dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 border-b dark:border-white/10 border-brand-200
-                                   sticky left-0 dark:bg-brand-900/90 bg-white z-10 min-w-[130px]">
-                      {pivotRow === 'WHO' ? 'Employee' : 'Team'}{pivotTableSort.sortArrow('label')}
+                      className={`text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                   border-b dark:border-white/10 border-brand-200 transition-colors
+                                   sticky left-0 z-10 min-w-[130px]
+                                   ${pivotTableSort.sortKey === 'label'
+                                     ? 'dark:bg-white/10 bg-brand-100 dark:text-white text-brand-900'
+                                     : 'dark:bg-brand-900/90 bg-white dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800'}`}>
+                      <span className="inline-flex items-center gap-1.5">
+                        {pivotRow === 'WHO' ? 'Employee' : 'Team'}
+                        <SortIndicator active={pivotTableSort.sortKey === 'label'} dir={pivotTableSort.sortDir} />
+                      </span>
                     </th>
-                    <th onClick={() => pivotTableSort.handleSort('total')}
-                      className="text-right py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                   dark:text-white/70 text-brand-700 dark:hover:text-white hover:text-brand-900 border-b dark:border-white/10 border-brand-200 min-w-[80px]">
-                      Total{pivotTableSort.sortArrow('total')}
-                    </th>
+                    <SortableTh label="Total" align="right" className="border-b dark:border-white/10 border-brand-200 min-w-[80px]"
+                      active={pivotTableSort.sortKey === 'total'} dir={pivotTableSort.sortDir}
+                      onClick={() => pivotTableSort.handleSort('total')} />
                     {pivotData.cols.map(col => (
-                      <th key={col} onClick={() => pivotTableSort.handleSort(col)}
-                        className="text-right py-2 px-3 text-xs font-semibold cursor-pointer select-none dark:text-white/50 text-brand-500
-                                   dark:hover:text-white hover:text-brand-800 border-b dark:border-white/10 border-brand-200 min-w-[90px] max-w-[140px] truncate">
-                        {col || '—'}{pivotTableSort.sortArrow(col)}
-                      </th>
+                      <SortableTh key={col} label={col || '—'} align="right"
+                        className="border-b dark:border-white/10 border-brand-200 min-w-[90px] max-w-[140px] truncate"
+                        active={pivotTableSort.sortKey === col} dir={pivotTableSort.sortDir}
+                        onClick={() => pivotTableSort.handleSort(col)} />
                     ))}
                   </tr>
                 </thead>

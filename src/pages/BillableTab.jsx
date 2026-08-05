@@ -15,6 +15,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import ChartSortMenu from '../components/common/ChartSortMenu'
+import SortableTh from '../components/common/SortableTh'
 import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import { useSortableRows } from '../hooks/useSortableRows'
 import {
@@ -516,11 +517,9 @@ export default function BillableTab() {
                     { key: 'total', label: 'Total (hrs)' },
                     { key: 'billablePct', label: 'Billable %' },
                   ].map(col => (
-                    <th key={col.key} onClick={() => billableTableSort.handleSort(col.key)}
-                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                 dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800">
-                      {col.label}{billableTableSort.sortArrow(col.key)}
-                    </th>
+                    <SortableTh key={col.key} label={col.label}
+                      active={billableTableSort.sortKey === col.key} dir={billableTableSort.sortDir}
+                      onClick={() => billableTableSort.handleSort(col.key)} />
                   ))}
                 </tr>
               </thead>

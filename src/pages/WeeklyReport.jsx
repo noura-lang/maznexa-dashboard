@@ -22,6 +22,7 @@ import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import TeamworkLink from '../components/common/TeamworkLink'
 import Dropdown from '../components/common/Dropdown'
 import ChartSortMenu from '../components/common/ChartSortMenu'
+import SortableTh from '../components/common/SortableTh'
 import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import { useSortableRows } from '../hooks/useSortableRows'
 import {
@@ -1385,11 +1386,9 @@ export default function WeeklyReport() {
                     { key: 'capacity', label: 'Capacity (hrs)' },
                     { key: 'utilPct', label: 'Utilization' },
                   ].map(col => (
-                    <th key={col.key} onClick={() => employeeTableSort.handleSort(col.key)}
-                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                 dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800">
-                      {col.label}{employeeTableSort.sortArrow(col.key)}
-                    </th>
+                    <SortableTh key={col.key} label={col.label}
+                      active={employeeTableSort.sortKey === col.key} dir={employeeTableSort.sortDir}
+                      onClick={() => employeeTableSort.handleSort(col.key)} />
                   ))}
                 </tr>
               </thead>
@@ -1672,11 +1671,9 @@ export default function WeeklyReport() {
                             { key: 'closedDate', label: 'Closed' },
                             { key: 'overdueDays', label: 'Overdue Days' },
                           ].map(col => (
-                            <th key={col.key} onClick={() => handleTaskDetailsSort(col.key)}
-                              className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                         dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                              {col.label}{taskDetailsSort.sortArrow(col.key)}
-                            </th>
+                            <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                              active={taskDetailsSort.sortKey === col.key} dir={taskDetailsSort.sortDir}
+                              onClick={() => handleTaskDetailsSort(col.key)} />
                           ))}
                         </tr>
                       </thead>

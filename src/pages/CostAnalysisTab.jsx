@@ -12,6 +12,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import KPICard from '../components/common/KPICard'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import ChartSortMenu from '../components/common/ChartSortMenu'
+import SortableTh from '../components/common/SortableTh'
 import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import { useSortableRows } from '../hooks/useSortableRows'
 import Dropdown from '../components/common/Dropdown'
@@ -374,11 +375,9 @@ export default function CostAnalysisTab() {
                   { key: 'client', label: 'Client' }, { key: 'hours', label: 'Hours' },
                   { key: 'actualCost', label: 'Actual Cost' }, { key: 'bufferedCost', label: 'Buffered Cost' },
                 ].map(col => (
-                  <th key={col.key} onClick={() => clientTableSort.handleSort(col.key)}
-                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                    {col.label}{clientTableSort.sortArrow(col.key)}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                    active={clientTableSort.sortKey === col.key} dir={clientTableSort.sortDir}
+                    onClick={() => clientTableSort.handleSort(col.key)} />
                 ))}
               </tr>
             </thead>
@@ -414,11 +413,9 @@ export default function CostAnalysisTab() {
                   { key: 'monthKey', label: 'Month' }, { key: 'employee', label: 'Employee' }, { key: 'hours', label: 'Hours' },
                   { key: 'actualCost', label: 'Actual Cost' }, { key: 'bufferedCost', label: 'Buffered Cost' },
                 ].map(col => (
-                  <th key={col.key} onClick={() => employeeMonthlyTableSort.handleSort(col.key)}
-                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                    {col.label}{employeeMonthlyTableSort.sortArrow(col.key)}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                    active={employeeMonthlyTableSort.sortKey === col.key} dir={employeeMonthlyTableSort.sortDir}
+                    onClick={() => employeeMonthlyTableSort.handleSort(col.key)} />
                 ))}
               </tr>
             </thead>
@@ -455,11 +452,9 @@ export default function CostAnalysisTab() {
                   { key: 'monthKey', label: 'Month' }, { key: 'project', label: 'Project' }, { key: 'client', label: 'Client' },
                   { key: 'hours', label: 'Hours' }, { key: 'actualCost', label: 'Actual Cost' }, { key: 'bufferedCost', label: 'Buffered Cost' },
                 ].map(col => (
-                  <th key={col.key} onClick={() => projectMonthlyTableSort.handleSort(col.key)}
-                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                    {col.label}{projectMonthlyTableSort.sortArrow(col.key)}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                    active={projectMonthlyTableSort.sortKey === col.key} dir={projectMonthlyTableSort.sortDir}
+                    onClick={() => projectMonthlyTableSort.handleSort(col.key)} />
                 ))}
               </tr>
             </thead>

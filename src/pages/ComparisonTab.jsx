@@ -14,6 +14,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import ChartTitleBadge from '../components/common/ChartTitleBadge'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import SortableTh from '../components/common/SortableTh'
 import { useSortableRows } from '../hooks/useSortableRows'
 import { useAuth } from '../context/AuthContext'
 import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
@@ -951,11 +952,9 @@ export default function ComparisonTab() {
                   { key: 'hours2026', label: 'Hours 2026' }, { key: 'capacity2026', label: 'Capacity 2026' },
                   { key: 'util2026', label: 'Utilization 2026' }, { key: 'growthPct', label: 'Growth %' },
                 ].map(col => (
-                  <th key={col.key} onClick={() => quarterlyTableSort.handleSort(col.key)}
-                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                    {col.label}{quarterlyTableSort.sortArrow(col.key)}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                    active={quarterlyTableSort.sortKey === col.key} dir={quarterlyTableSort.sortDir}
+                    onClick={() => quarterlyTableSort.handleSort(col.key)} />
                 ))}
               </tr>
             </thead>
@@ -1024,11 +1023,9 @@ export default function ComparisonTab() {
                     { key: 'hours2026', label: 'Hours 2026' }, { key: 'capacity2026', label: 'Capacity 2026' },
                     { key: 'util2026', label: 'Utilization 2026' }, { key: 'growthPct', label: 'Growth %' },
                   ].map(col => (
-                    <th key={col.key} onClick={() => monthlyTableSort.handleSort(col.key)}
-                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                                 dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                      {col.label}{monthlyTableSort.sortArrow(col.key)}
-                    </th>
+                    <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                      active={monthlyTableSort.sortKey === col.key} dir={monthlyTableSort.sortDir}
+                      onClick={() => monthlyTableSort.handleSort(col.key)} />
                   ))}
                 </tr>
               </thead>
@@ -1177,11 +1174,9 @@ export default function ComparisonTab() {
                   { key: 'hours2026', label: 'Hours 2026' }, { key: 'capacity2026', label: 'Capacity 2026' },
                   { key: 'util2026', label: 'Utilization 2026' }, { key: 'delta', label: 'Growth %' },
                 ].map(col => (
-                  <th key={col.key} onClick={() => teamByMonthTableSort.handleSort(col.key)}
-                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                    {col.label}{teamByMonthTableSort.sortArrow(col.key)}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                    active={teamByMonthTableSort.sortKey === col.key} dir={teamByMonthTableSort.sortDir}
+                    onClick={() => teamByMonthTableSort.handleSort(col.key)} />
                 ))}
               </tr>
             </thead>
@@ -1267,11 +1262,9 @@ export default function ComparisonTab() {
                   { key: 'capacity2026', label: 'Capacity 2026' }, { key: 'util2026', label: 'Utilization 2026' },
                   { key: 'delta', label: 'Growth %' },
                 ].map(col => (
-                  <th key={col.key} onClick={() => employeeByMonthTableSort.handleSort(col.key)}
-                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
-                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
-                    {col.label}{employeeByMonthTableSort.sortArrow(col.key)}
-                  </th>
+                  <SortableTh key={col.key} label={col.label} className="whitespace-nowrap"
+                    active={employeeByMonthTableSort.sortKey === col.key} dir={employeeByMonthTableSort.sortDir}
+                    onClick={() => employeeByMonthTableSort.handleSort(col.key)} />
                 ))}
               </tr>
             </thead>
