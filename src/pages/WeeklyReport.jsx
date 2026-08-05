@@ -21,6 +21,9 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import TeamworkLink from '../components/common/TeamworkLink'
 import Dropdown from '../components/common/Dropdown'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
+import { useSortableRows } from '../hooks/useSortableRows'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
   Legend as RechartsLegend, PieChart, Pie,
@@ -775,6 +778,38 @@ export default function WeeklyReport() {
   const top5Employees    = byEmployee.slice(0, 5)
   const bottom5Employees = byEmployee.slice(-5)
 
+  // ─── Chart sort dropdowns — each category-based bar chart (Team/Employee
+  // comparisons) gets its own independent "Sort" selector, defaulting to
+  // DESC so nothing changes visually until the user picks something else.
+  // For Top 5/Bottom 6/Top 5 Employees/Bottom 5 Employees, sorting only
+  // reorders the already-selected subset for display — it never changes
+  // *which* teams/employees count as "top"/"bottom" (that selection stays
+  // pinned to the real descending order via top5/bottom6/etc. above).
+  // Chronological charts (YTD by Month, Weekly Trend) intentionally have no
+  // sort dropdown — reordering by value would break their timeline.
+  const [top5SortMode, setTop5SortMode] = useState(SORT_MODES.DESC)
+  const [bottom6SortMode, setBottom6SortMode] = useState(SORT_MODES.DESC)
+  const [byTeamSortMode, setByTeamSortMode] = useState(SORT_MODES.DESC)
+  const [top5EmpSortMode, setTop5EmpSortMode] = useState(SORT_MODES.DESC)
+  const [bottom5EmpSortMode, setBottom5EmpSortMode] = useState(SORT_MODES.DESC)
+  const [byEmployeeSortMode, setByEmployeeSortMode] = useState(SORT_MODES.DESC)
+  const [tagPerEmpSortMode, setTagPerEmpSortMode] = useState(SORT_MODES.DESC)
+  const [taskStatusSortMode, setTaskStatusSortMode] = useState(SORT_MODES.DESC)
+  const [overdueSortMode, setOverdueSortMode] = useState(SORT_MODES.DESC)
+
+  const top5Sorted    = useMemo(() => sortChartRows(top5, top5SortMode, 'utilPct', 'team'), [top5, top5SortMode])
+  const bottom6Sorted = useMemo(() => sortChartRows(bottom6, bottom6SortMode, 'utilPct', 'team'), [bottom6, bottom6SortMode])
+  const byTeamSorted  = useMemo(() => sortChartRows(byTeam, byTeamSortMode, 'utilPct', 'team'), [byTeam, byTeamSortMode])
+  const top5EmpSorted    = useMemo(() => sortChartRows(top5Employees, top5EmpSortMode, 'utilPct', 'name'), [top5Employees, top5EmpSortMode])
+  const bottom5EmpSorted = useMemo(() => sortChartRows(bottom5Employees, bottom5EmpSortMode, 'utilPct', 'name'), [bottom5Employees, bottom5EmpSortMode])
+  const byEmployeeSorted = useMemo(() => sortChartRows(byEmployee, byEmployeeSortMode, 'utilPct', 'name'), [byEmployee, byEmployeeSortMode])
+  const employeeTableSort = useSortableRows(byEmployee, 'utilPct', 'desc')
+  const employeeTableSorted = employeeTableSort.sorted
+  const top15TagByEmployeeSorted = useMemo(
+    () => sortChartRows(top15TagByEmployee, tagPerEmpSortMode, 'total', 'name'),
+    [top15TagByEmployee, tagPerEmpSortMode]
+  )
+
   // ─── Top/Lowest Employee & Team widgets — same filteredCap/byTeam/byEmployee
   // (main filter + current period) as every other chart above, so these never
   // drift out of sync with the rest of the tab.
@@ -941,6 +976,10 @@ export default function WeeklyReport() {
     [filteredTasks]
   )
   const allTaskStatus = taskStatusByEmployee
+  const taskStatusSorted = useMemo(
+    () => sortChartRows(allTaskStatus.map(e => ({ ...e, total: e.complete + e.inProgress })), taskStatusSortMode, 'total', 'name'),
+    [allTaskStatus, taskStatusSortMode]
+  )
 
   // Overdue Tasks by Employee — same filteredTasks the Task Details pivot
   // above renders (Overdue Days > 0, now also Team/Employee Data Scope
@@ -950,8 +989,22 @@ export default function WeeklyReport() {
     () => calcOverdueTaskCountByEmployee(filteredTasks, capRows),
     [filteredTasks, capRows]
   )
-  const taskTotalPages  = Math.max(1, Math.ceil(taskPivot.length / TASK_PAGE_SIZE))
-  const taskPageRows    = taskPivot.slice(taskPage * TASK_PAGE_SIZE, taskPage * TASK_PAGE_SIZE + TASK_PAGE_SIZE)
+  const overdueSorted = useMemo(
+    () => sortChartRows(overdueByEmployee, overdueSortMode, 'count', 'name'),
+    [overdueByEmployee, overdueSortMode]
+  )
+  // Clickable column headers — defaults to the same "most overdue first"
+  // order taskPivot's own useMemo already sorts by, so nothing changes
+  // visually until a header is clicked.
+  const taskDetailsSort = useSortableRows(taskPivot, 'overdueDays', 'desc')
+  const taskDetailsSorted = taskDetailsSort.sorted
+  function handleTaskDetailsSort(key) {
+    taskDetailsSort.handleSort(key)
+    setTaskPage(0)
+  }
+
+  const taskTotalPages  = Math.max(1, Math.ceil(taskDetailsSorted.length / TASK_PAGE_SIZE))
+  const taskPageRows    = taskDetailsSorted.slice(taskPage * TASK_PAGE_SIZE, taskPage * TASK_PAGE_SIZE + TASK_PAGE_SIZE)
 
   function goToTaskPage(p) {
     setTaskPage(Math.min(Math.max(p, 0), taskTotalPages - 1))
@@ -1124,9 +1177,10 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MaximizableChartCard
           title="Top 5 Teams by Utilization"
+          headerExtra={<ChartSortMenu value={top5SortMode} onChange={setTop5SortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={top5}
+          exportRows={top5Sorted}
           exportColumns={[
             { key: 'team', label: 'Team' },
             { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
@@ -1134,12 +1188,12 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={top5} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={top5Sorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
-                  {top5.map((entry, i) => (
+                  {top5Sorted.map((entry, i) => (
                     <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
@@ -1151,9 +1205,10 @@ export default function WeeklyReport() {
 
         <MaximizableChartCard
           title="Bottom 6 Teams by Utilization"
+          headerExtra={<ChartSortMenu value={bottom6SortMode} onChange={setBottom6SortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={bottom6}
+          exportRows={bottom6Sorted}
           exportColumns={[
             { key: 'team', label: 'Team' },
             { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
@@ -1161,12 +1216,12 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={bottom6} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={bottom6Sorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
-                  {bottom6.map((entry, i) => (
+                  {bottom6Sorted.map((entry, i) => (
                     <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
@@ -1180,10 +1235,10 @@ export default function WeeklyReport() {
       {/* Utilization by Team — full chart */}
       <MaximizableChartCard
         title="Utilization by Team"
-        headerExtra={UTIL_LEGEND_EXTRA}
+        headerExtra={<div className="flex items-center gap-4 flex-wrap">{UTIL_LEGEND_EXTRA}<ChartSortMenu value={byTeamSortMode} onChange={setByTeamSortMode} /></div>}
         height={280}
         modalHeight={480}
-        exportRows={byTeam}
+        exportRows={byTeamSorted}
         exportColumns={[
           { key: 'team', label: 'Team' },
           { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
@@ -1191,12 +1246,12 @@ export default function WeeklyReport() {
       >
         {h => (
           <ResponsiveContainer width="100%" height={h}>
-            <BarChart data={byTeam} margin={{ top: 24, bottom: 40 }}>
+            <BarChart data={byTeamSorted} margin={{ top: 24, bottom: 40 }}>
               <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
               <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
-                {byTeam.map((entry, i) => (
+                {byTeamSorted.map((entry, i) => (
                   <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                 ))}
                 <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
@@ -1210,9 +1265,10 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MaximizableChartCard
           title="Top 5 Employees by Utilization"
+          headerExtra={<ChartSortMenu value={top5EmpSortMode} onChange={setTop5EmpSortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={top5Employees}
+          exportRows={top5EmpSorted}
           exportColumns={[
             { key: 'name', label: 'Employee' },
             { key: 'team', label: 'Team' },
@@ -1221,12 +1277,12 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={top5Employees} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={top5EmpSorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
-                  {top5Employees.map((entry, i) => (
+                  {top5EmpSorted.map((entry, i) => (
                     <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
@@ -1238,9 +1294,10 @@ export default function WeeklyReport() {
 
         <MaximizableChartCard
           title="Bottom 5 Employees by Utilization"
+          headerExtra={<ChartSortMenu value={bottom5EmpSortMode} onChange={setBottom5EmpSortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={bottom5Employees}
+          exportRows={bottom5EmpSorted}
           exportColumns={[
             { key: 'name', label: 'Employee' },
             { key: 'team', label: 'Team' },
@@ -1249,12 +1306,12 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={bottom5Employees} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={bottom5EmpSorted} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
-                  {bottom5Employees.map((entry, i) => (
+                  {bottom5EmpSorted.map((entry, i) => (
                     <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                   ))}
                   <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
@@ -1268,9 +1325,10 @@ export default function WeeklyReport() {
       {/* Utilization by Employee — full chart (all employees) */}
       <MaximizableChartCard
         title={`Utilization by Employee — All (${byEmployee.length})`}
+        headerExtra={<ChartSortMenu value={byEmployeeSortMode} onChange={setByEmployeeSortMode} />}
         height={380}
         modalHeight={520}
-        exportRows={byEmployee}
+        exportRows={byEmployeeSorted}
         exportColumns={[
           { key: 'name', label: 'Employee' },
           { key: 'team', label: 'Team' },
@@ -1283,15 +1341,15 @@ export default function WeeklyReport() {
           // Wide, horizontally-scrollable canvas — enough per-bar width to keep
           // each rotated employee name legible even with 30+ employees.
           <div className="overflow-x-auto">
-            <div style={{ minWidth: Math.max(900, byEmployee.length * 70) }}>
+            <div style={{ minWidth: Math.max(900, byEmployeeSorted.length * 70) }}>
               <ResponsiveContainer width="100%" height={h}>
-                <BarChart data={byEmployee} margin={{ top: 24, bottom: 90 }}>
+                <BarChart data={byEmployeeSorted} margin={{ top: 24, bottom: 90 }}>
                   <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                     angle={-35} textAnchor="end" interval={0} />
                   <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
-                    {byEmployee.map((entry, i) => (
+                    {byEmployeeSorted.map((entry, i) => (
                       <Cell key={i} fill={barFill(utilizationColor(entry.utilPct).bg, isDark)} />
                     ))}
                     <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
@@ -1306,7 +1364,7 @@ export default function WeeklyReport() {
       {/* Employee table */}
       <MaximizableChartCard
         title="Utilization by Employee"
-        exportRows={byEmployee}
+        exportRows={employeeTableSorted}
         exportColumns={[
           { key: 'name', label: 'Employee' },
           { key: 'team', label: 'Team' },
@@ -1320,16 +1378,23 @@ export default function WeeklyReport() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b dark:border-white/10 border-brand-200">
-                  {['Employee', 'Team', 'Logged (hrs)', 'Capacity (hrs)', 'Utilization'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                           dark:text-white/50 text-brand-500">
-                      {h}
+                  {[
+                    { key: 'name', label: 'Employee' },
+                    { key: 'team', label: 'Team' },
+                    { key: 'logged', label: 'Logged (hrs)' },
+                    { key: 'capacity', label: 'Capacity (hrs)' },
+                    { key: 'utilPct', label: 'Utilization' },
+                  ].map(col => (
+                    <th key={col.key} onClick={() => employeeTableSort.handleSort(col.key)}
+                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                 dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800">
+                      {col.label}{employeeTableSort.sortArrow(col.key)}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {byEmployee.map((emp, i) => (
+                {employeeTableSorted.map((emp, i) => (
                   <tr
                     key={emp.name}
                     className={`border-b dark:border-white/5 border-brand-100
@@ -1395,9 +1460,10 @@ export default function WeeklyReport() {
       {/* Time Log Tags — per employee */}
       <MaximizableChartCard
         title="Hours by Time Log Tag per Employee (Top 15)"
+        headerExtra={<ChartSortMenu value={tagPerEmpSortMode} onChange={setTagPerEmpSortMode} />}
         height={380}
         modalHeight={560}
-        exportRows={top15TagByEmployee}
+        exportRows={top15TagByEmployeeSorted}
         exportColumns={[
           { key: 'name', label: 'Employee' },
           ...TAG_WHITELIST.map(tag => ({ key: tag, label: tag, format: fmtHours })),
@@ -1406,16 +1472,16 @@ export default function WeeklyReport() {
       >
         {h => (
           <div className="overflow-x-auto">
-            <div style={{ minWidth: Math.max(700, top15TagByEmployee.length * 70) }}>
+            <div style={{ minWidth: Math.max(700, top15TagByEmployeeSorted.length * 70) }}>
               <ResponsiveContainer width="100%" height={h}>
-                <BarChart data={top15TagByEmployee} margin={{ top: 32, bottom: 90 }}>
+                <BarChart data={top15TagByEmployeeSorted} margin={{ top: 32, bottom: 90 }}>
                   <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                     angle={-35} textAnchor="end" interval={0} />
                   <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours} />
                   <Tooltip content={<TagHoursTooltip />} />
                   <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
                   {TAG_WHITELIST.map((tag, i) => {
-                    const maxTotal = Math.max(...top15TagByEmployee.map(d => d.total), 1)
+                    const maxTotal = Math.max(...top15TagByEmployeeSorted.map(d => d.total), 1)
                     const labelFmt = v => (v > 0 && v / maxTotal > 0.04 ? fmtHours(v) : '')
                     return (
                       <Bar
@@ -1476,9 +1542,10 @@ export default function WeeklyReport() {
         <>
           <MaximizableChartCard
             title={`Tasks Complete vs In Progress by Employee — All (${allTaskStatus.length})`}
+            headerExtra={<ChartSortMenu value={taskStatusSortMode} onChange={setTaskStatusSortMode} />}
             height={420}
             modalHeight={560}
-            exportRows={allTaskStatus}
+            exportRows={taskStatusSorted}
             exportColumns={[
               { key: 'name', label: 'Employee' },
               { key: 'complete', label: 'Complete' },
@@ -1487,9 +1554,9 @@ export default function WeeklyReport() {
           >
             {h => (
               <div className="overflow-x-auto">
-                <div style={{ minWidth: Math.max(900, allTaskStatus.length * 60) }}>
+                <div style={{ minWidth: Math.max(900, taskStatusSorted.length * 60) }}>
                   <ResponsiveContainer width="100%" height={h}>
-                    <BarChart data={allTaskStatus} margin={{ top: 32, bottom: 90 }}>
+                    <BarChart data={taskStatusSorted} margin={{ top: 32, bottom: 90 }}>
                       <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                         angle={-35} textAnchor="end" interval={0} />
                       <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} />
@@ -1514,31 +1581,32 @@ export default function WeeklyReport() {
               Overdue Days > 0 only, Business Development & Trainees excluded */}
           <MaximizableChartCard
             title="Overdue Tasks by Employee"
+            headerExtra={<ChartSortMenu value={overdueSortMode} onChange={setOverdueSortMode} />}
             height={380}
             modalHeight={520}
-            exportRows={overdueByEmployee}
+            exportRows={overdueSorted}
             exportColumns={[
               { key: 'name', label: 'Employee' },
               { key: 'count', label: 'Overdue Tasks' },
             ]}
           >
             {h => (
-              overdueByEmployee.length === 0 ? (
+              overdueSorted.length === 0 ? (
                 <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
                   No overdue tasks for the current filters.
                 </p>
               ) : (
                 <div className="overflow-x-auto">
-                  <div style={{ minWidth: Math.max(900, overdueByEmployee.length * 60) }}>
+                  <div style={{ minWidth: Math.max(900, overdueSorted.length * 60) }}>
                     <ResponsiveContainer width="100%" height={h}>
-                      <BarChart data={overdueByEmployee} margin={{ top: 24, bottom: 90 }}>
+                      <BarChart data={overdueSorted} margin={{ top: 24, bottom: 90 }}>
                         <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                           angle={-35} textAnchor="end" interval={0} />
                         <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={false} />
                         <Tooltip content={<GenericTooltip />} />
                         <Bar dataKey="count" name="Overdue Tasks" radius={[6, 6, 0, 0]}>
-                          {overdueByEmployee.map((_, i) => (
-                            <Cell key={i} fill={barFill(sequentialColor(i, overdueByEmployee.length), isDark)} />
+                          {overdueSorted.map((_, i) => (
+                            <Cell key={i} fill={barFill(sequentialColor(i, overdueSorted.length), isDark)} />
                           ))}
                           <LabelList dataKey="count" position="top" style={axisLabelStyle} />
                         </Bar>
@@ -1556,7 +1624,7 @@ export default function WeeklyReport() {
               : 'Task Details'}
             height={TASK_DETAILS_HEIGHT}
             modalHeight={TASK_DETAILS_MODAL_HEIGHT}
-            exportRows={taskPivot}
+            exportRows={taskDetailsSorted}
             exportColumns={[
               { key: 'taskName', label: 'Task Name' },
               { key: 'assignee', label: 'Assignee' },
@@ -1569,7 +1637,7 @@ export default function WeeklyReport() {
           >
             {h => {
               const maximized = h === TASK_DETAILS_MODAL_HEIGHT
-              const rows = maximized ? taskPivot : taskPageRows
+              const rows = maximized ? taskDetailsSorted : taskPageRows
               return (
                 <>
                   {!maximized && (
@@ -1595,10 +1663,19 @@ export default function WeeklyReport() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b dark:border-white/10 border-brand-200">
-                          {['Task Name', 'Assignee', 'Created', 'Start', 'End (Due)', 'Closed', 'Overdue Days'].map(hd => (
-                            <th key={hd} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                                   dark:text-white/50 text-brand-500 whitespace-nowrap">
-                              {hd}
+                          {[
+                            { key: 'taskName', label: 'Task Name' },
+                            { key: 'assignee', label: 'Assignee' },
+                            { key: 'createdDate', label: 'Created' },
+                            { key: 'startDate', label: 'Start' },
+                            { key: 'endDate', label: 'End (Due)' },
+                            { key: 'closedDate', label: 'Closed' },
+                            { key: 'overdueDays', label: 'Overdue Days' },
+                          ].map(col => (
+                            <th key={col.key} onClick={() => handleTaskDetailsSort(col.key)}
+                              className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                         dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                              {col.label}{taskDetailsSort.sortArrow(col.key)}
                             </th>
                           ))}
                         </tr>

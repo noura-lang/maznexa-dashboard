@@ -11,6 +11,9 @@ import {
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import KPICard from '../components/common/KPICard'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
+import { useSortableRows } from '../hooks/useSortableRows'
 import Dropdown from '../components/common/Dropdown'
 import MultiSelect from '../components/common/MultiSelect'
 import { CHART_COLORS } from '../utils/chartColors'
@@ -220,6 +223,29 @@ export default function CostAnalysisTab() {
   const byEmployeeMonthly = useMemo(() => calcCostByEmployeeMonthly(filteredRows), [filteredRows])
   const byProjectMonthly = useMemo(() => calcCostByProjectMonthly(filteredRows), [filteredRows])
 
+  // Chart sort dropdown (Cost by Client is category-based, so it gets one)
+  // + clickable-header table sort. calcCostByClient already sorts by
+  // actualCost desc, so that's the matching initial key/dir; the two
+  // Monthly tables sort by month-then-cost (a compound key a single-column
+  // sort can't represent), so their default view is preserved via a
+  // synthetic `_idx` position field until the user clicks a header — same
+  // pattern used on ComparisonTab's month-scoped tables.
+  const [clientChartSortMode, setClientChartSortMode] = useState(SORT_MODES.DESC)
+  const byClientChartSorted = useMemo(
+    () => sortChartRows(byClient, clientChartSortMode, 'actualCost', 'client'),
+    [byClient, clientChartSortMode]
+  )
+  const clientTableSort = useSortableRows(byClient, 'actualCost', 'desc')
+  const clientTableSorted = clientTableSort.sorted
+
+  const employeeMonthlyIndexed = useMemo(() => byEmployeeMonthly.map((r, i) => ({ ...r, _idx: i })), [byEmployeeMonthly])
+  const employeeMonthlyTableSort = useSortableRows(employeeMonthlyIndexed, '_idx', 'asc')
+  const employeeMonthlyTableSorted = employeeMonthlyTableSort.sorted
+
+  const projectMonthlyIndexed = useMemo(() => byProjectMonthly.map((r, i) => ({ ...r, _idx: i })), [byProjectMonthly])
+  const projectMonthlyTableSort = useSortableRows(projectMonthlyIndexed, '_idx', 'asc')
+  const projectMonthlyTableSorted = projectMonthlyTableSort.sorted
+
   // Monthly trend deliberately ignores the Month filter (it IS the
   // month-by-month view) but still respects Client/Employee, same
   // convention as the AM Performance tab's monthly chart.
@@ -316,10 +342,15 @@ export default function CostAnalysisTab() {
       )}
 
       {/* Cost by Client — chart + table, click either to drill into employees */}
-      <MaximizableChartCard title="Cost by Client" height={320} modalHeight={480}>
+      <MaximizableChartCard
+        title="Cost by Client"
+        headerExtra={<ChartSortMenu value={clientChartSortMode} onChange={setClientChartSortMode} />}
+        height={320}
+        modalHeight={480}
+      >
         {h => (
           <ResponsiveContainer width="100%" height={h}>
-            <BarChart data={byClient} margin={{ top: 28, bottom: 40 }}>
+            <BarChart data={byClientChartSorted} margin={{ top: 28, bottom: 40 }}>
               <XAxis dataKey="client" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-30} textAnchor="end" height={60} interval={0} />
               <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => v.toLocaleString()} />
               <Tooltip content={<GenericTooltip />} />
@@ -339,14 +370,20 @@ export default function CostAnalysisTab() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 dark:bg-brand-900 bg-white">
               <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Client', 'Hours', 'Actual Cost', 'Buffered Cost'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500 whitespace-nowrap">{h}</th>
+                {[
+                  { key: 'client', label: 'Client' }, { key: 'hours', label: 'Hours' },
+                  { key: 'actualCost', label: 'Actual Cost' }, { key: 'bufferedCost', label: 'Buffered Cost' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => clientTableSort.handleSort(col.key)}
+                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                    {col.label}{clientTableSort.sortArrow(col.key)}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {byClient.map((row, i) => (
+              {clientTableSorted.map((row, i) => (
                 <tr key={row.client} onClick={() => openClientDrillDown(row.client)}
                   className={`border-b dark:border-white/5 border-brand-100 cursor-pointer
                     hover:dark:bg-white/5 hover:bg-brand-50
@@ -373,14 +410,20 @@ export default function CostAnalysisTab() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 dark:bg-brand-900 bg-white">
               <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Month', 'Employee', 'Hours', 'Actual Cost', 'Buffered Cost'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500 whitespace-nowrap">{h}</th>
+                {[
+                  { key: 'monthKey', label: 'Month' }, { key: 'employee', label: 'Employee' }, { key: 'hours', label: 'Hours' },
+                  { key: 'actualCost', label: 'Actual Cost' }, { key: 'bufferedCost', label: 'Buffered Cost' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => employeeMonthlyTableSort.handleSort(col.key)}
+                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                    {col.label}{employeeMonthlyTableSort.sortArrow(col.key)}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {byEmployeeMonthly.map((row, i) => (
+              {employeeMonthlyTableSorted.map((row, i) => (
                 <tr key={`${row.employee}-${row.monthKey}`} onClick={() => openEmployeeMonthDrillDown(row.employee, row.monthKey)}
                   className={`border-b dark:border-white/5 border-brand-100 cursor-pointer
                     hover:dark:bg-white/5 hover:bg-brand-50
@@ -408,14 +451,20 @@ export default function CostAnalysisTab() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 dark:bg-brand-900 bg-white">
               <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Month', 'Project', 'Client', 'Hours', 'Actual Cost', 'Buffered Cost'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500 whitespace-nowrap">{h}</th>
+                {[
+                  { key: 'monthKey', label: 'Month' }, { key: 'project', label: 'Project' }, { key: 'client', label: 'Client' },
+                  { key: 'hours', label: 'Hours' }, { key: 'actualCost', label: 'Actual Cost' }, { key: 'bufferedCost', label: 'Buffered Cost' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => projectMonthlyTableSort.handleSort(col.key)}
+                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                    {col.label}{projectMonthlyTableSort.sortArrow(col.key)}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {byProjectMonthly.map((row, i) => (
+              {projectMonthlyTableSorted.map((row, i) => (
                 <tr key={`${row.project}-${row.client}-${row.monthKey}`}
                   onClick={() => openProjectMonthDrillDown(row.project, row.client, row.monthKey)}
                   className={`border-b dark:border-white/5 border-brand-100 cursor-pointer

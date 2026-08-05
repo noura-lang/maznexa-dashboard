@@ -10,6 +10,8 @@ import { CHART_COLORS } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import TeamworkLink from '../components/common/TeamworkLink'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
@@ -320,25 +322,29 @@ function TagPieChart({ title, data, onSliceClick }) {
 // "Tasks by Employee — by Tag" chart. Clicking a bar drills down via
 // `onBarClick(employeeName)`.
 function EmployeeTagBarChart({ title, data, dataKey, seriesName, isHours, onBarClick }) {
+  const [sortMode, setSortMode] = useState(SORT_MODES.DESC)
+  const sorted = useMemo(() => sortChartRows(data, sortMode, dataKey, 'name'), [data, sortMode, dataKey])
+
   return (
     <MaximizableChartCard
       title={title}
+      headerExtra={<ChartSortMenu value={sortMode} onChange={setSortMode} />}
       height={340}
       modalHeight={480}
-      exportRows={data}
+      exportRows={sorted}
       exportColumns={[
         { key: 'name', label: 'Employee' },
         { key: dataKey, label: seriesName, format: isHours ? v => Number(v ?? 0).toFixed(2) : undefined },
       ]}
     >
       {h => (
-        data.length === 0 ? (
+        sorted.length === 0 ? (
           <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">No tasks tagged for this.</p>
         ) : (
           <div className="overflow-x-auto">
-            <div style={{ minWidth: Math.max(600, data.length * 70) }}>
+            <div style={{ minWidth: Math.max(600, sorted.length * 70) }}>
               <ResponsiveContainer width="100%" height={h}>
-                <BarChart data={data} margin={{ top: 24, bottom: 70 }}>
+                <BarChart data={sorted} margin={{ top: 24, bottom: 70 }}>
                   <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                     angle={-35} textAnchor="end" interval={0} />
                   <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={isHours} />
@@ -350,7 +356,7 @@ function EmployeeTagBarChart({ title, data, dataKey, seriesName, isHours, onBarC
                     onClick={entry => onBarClick?.(entry?.name)}
                     style={{ cursor: 'pointer' }}
                   >
-                    {data.map((_, i) => (
+                    {sorted.map((_, i) => (
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
                     <LabelList

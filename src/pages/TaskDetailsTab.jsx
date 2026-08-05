@@ -12,6 +12,8 @@ import { CHART_COLORS } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import Dropdown from '../components/common/Dropdown'
 import MultiSelect from '../components/common/MultiSelect'
 import TeamworkLink from '../components/common/TeamworkLink'
@@ -481,6 +483,11 @@ export default function TaskDetailsTab() {
     () => (effectiveTag ? calcTaskCountByEmployeeForTagFiltered(filteredTasks, effectiveTag, filteredEmployeeNames) : []),
     [filteredTasks, effectiveTag, filteredEmployeeNames]
   )
+  const [tagByEmployeeSortMode, setTagByEmployeeSortMode] = useState(SORT_MODES.DESC)
+  const tagByEmployeeSorted = useMemo(
+    () => sortChartRows(tagByEmployee, tagByEmployeeSortMode, 'count', 'name'),
+    [tagByEmployee, tagByEmployeeSortMode]
+  )
 
   // Total Logged Hrs by tag, whole team combined — respects the same
   // Team/Employee filter as the summary table above, via filteredEmployeeNames.
@@ -505,6 +512,11 @@ export default function TaskDetailsTab() {
   const filteredHoursByTag = useMemo(
     () => hoursByTag.filter(row => selectedHoursTags.length === 0 || selectedHoursTags.includes(row.tag)),
     [hoursByTag, selectedHoursTags]
+  )
+  const [hoursByTagSortMode, setHoursByTagSortMode] = useState(SORT_MODES.DESC)
+  const filteredHoursByTagSorted = useMemo(
+    () => sortChartRows(filteredHoursByTag, hoursByTagSortMode, 'hours', 'tag'),
+    [filteredHoursByTag, hoursByTagSortMode]
   )
 
   if (loadingTasks || loadingCap) return <LoadingSpinner message="Loading task data..." />
@@ -593,33 +605,36 @@ export default function TaskDetailsTab() {
       {/* Tasks per employee, by tag */}
       <MaximizableChartCard
         title="Tasks by Employee — by Tag"
-        exportRows={tagByEmployee}
+        exportRows={tagByEmployeeSorted}
         exportColumns={[
           { key: 'name', label: 'Employee' },
           { key: 'count', label: 'Tasks' },
         ]}
         headerExtra={
-          <Dropdown
-            options={availableTags}
-            value={effectiveTag || ''}
-            onChange={setSelectedTag}
-            placeholder={availableTags.length === 0 ? 'No tags found' : 'Select'}
-            buttonClassName="text-xs py-1.5"
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <Dropdown
+              options={availableTags}
+              value={effectiveTag || ''}
+              onChange={setSelectedTag}
+              placeholder={availableTags.length === 0 ? 'No tags found' : 'Select'}
+              buttonClassName="text-xs py-1.5"
+            />
+            <ChartSortMenu value={tagByEmployeeSortMode} onChange={setTagByEmployeeSortMode} />
+          </div>
         }
         height={380}
         modalHeight={520}
       >
         {h => (
-          tagByEmployee.length === 0 ? (
+          tagByEmployeeSorted.length === 0 ? (
             <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
               No tasks tagged "{effectiveTag}".
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <div style={{ minWidth: Math.max(900, tagByEmployee.length * 60) }}>
+              <div style={{ minWidth: Math.max(900, tagByEmployeeSorted.length * 60) }}>
                 <ResponsiveContainer width="100%" height={h}>
-                  <BarChart data={tagByEmployee} margin={{ top: 24, bottom: 90 }}>
+                  <BarChart data={tagByEmployeeSorted} margin={{ top: 24, bottom: 90 }}>
                     <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
                       angle={-35} textAnchor="end" interval={0} />
                     <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={false} />
@@ -636,7 +651,7 @@ export default function TaskDetailsTab() {
                       )
                     }} />
                     <Bar dataKey="count" name="Tasks" radius={[6, 6, 0, 0]}>
-                      {tagByEmployee.map((_, i) => (
+                      {tagByEmployeeSorted.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
                       <LabelList dataKey="count" position="top" style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
@@ -654,36 +669,39 @@ export default function TaskDetailsTab() {
         title="Total Hours by Tag"
         height={340}
         modalHeight={480}
-        exportRows={filteredHoursByTag}
+        exportRows={filteredHoursByTagSorted}
         exportColumns={[
           { key: 'tag', label: 'Tag' },
           { key: 'hours', label: 'Hours', format: v => Number(v ?? 0).toFixed(2) },
         ]}
         headerExtra={
-          <MultiSelect
-            options={availableTags}
-            value={selectedHoursTags}
-            onChange={setSelectedHoursTags}
-            placeholder="All Tags"
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <MultiSelect
+              options={availableTags}
+              value={selectedHoursTags}
+              onChange={setSelectedHoursTags}
+              placeholder="All Tags"
+            />
+            <ChartSortMenu value={hoursByTagSortMode} onChange={setHoursByTagSortMode} />
+          </div>
         }
       >
         {h => (
-          filteredHoursByTag.length === 0 ? (
+          filteredHoursByTagSorted.length === 0 ? (
             <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
               No tagged tasks match the current filters.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <div style={{ minWidth: Math.max(600, filteredHoursByTag.length * 70) }}>
+              <div style={{ minWidth: Math.max(600, filteredHoursByTagSorted.length * 70) }}>
                 <ResponsiveContainer width="100%" height={h}>
-                  <BarChart data={filteredHoursByTag} margin={{ top: 24, bottom: 60 }}>
+                  <BarChart data={filteredHoursByTagSorted} margin={{ top: 24, bottom: 60 }}>
                     <XAxis dataKey="tag" tick={{ fill: 'currentColor', fontSize: 11 }}
                       angle={-35} textAnchor="end" interval={0} />
                     <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={false} />
                     <Tooltip content={<GenericTooltip />} />
                     <Bar dataKey="hours" name="Logged Hours" radius={[6, 6, 0, 0]}>
-                      {filteredHoursByTag.map(row => (
+                      {filteredHoursByTagSorted.map(row => (
                         <Cell key={row.tag} fill={tagColor(row.tag)} />
                       ))}
                       <LabelList dataKey="hours" position="top" style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />

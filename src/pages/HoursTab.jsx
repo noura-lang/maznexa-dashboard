@@ -10,6 +10,9 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import Dropdown from '../components/common/Dropdown'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
+import { useSortableRows } from '../hooks/useSortableRows'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts'
@@ -148,6 +151,28 @@ export default function HoursTab() {
     [byClient, totalHours]
   )
 
+  // Chart sort dropdowns — Client/Project charts are category-based, so
+  // both get one; the Pivot Table isn't a bar chart (its rows get sortable
+  // headers instead, further below).
+  const [clientSortMode, setClientSortMode] = useState(SORT_MODES.DESC)
+  const [projectSortMode, setProjectSortMode] = useState(SORT_MODES.DESC)
+  const byClientTop20Sorted = useMemo(
+    () => sortChartRows(byClient.slice(0, 20), clientSortMode, 'hours', 'client'),
+    [byClient, clientSortMode]
+  )
+  const byProjectTop20Sorted = useMemo(
+    () => sortChartRows(byProject.slice(0, 20), projectSortMode, 'hours', 'project'),
+    [byProject, projectSortMode]
+  )
+
+  // Sortable table headers
+  const clientTableSort = useSortableRows(byClientExport, 'hours', 'desc')
+  const clientTableSorted = clientTableSort.sorted
+  const projectTableSort = useSortableRows(byProject, 'hours', 'desc')
+  const projectTableSorted = projectTableSort.sorted
+  const pivotTableSort = useSortableRows(pivotData.data, 'total', 'desc')
+  const pivotTableSorted = pivotTableSort.sorted
+
   // Drill-down — click a Client/Project bar or table row to see which
   // employees logged those hours; click a Pivot Table cell to see the raw
   // rows behind that exact row×column intersection.
@@ -210,9 +235,10 @@ export default function HoursTab() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <MaximizableChartCard
             title="Hours by Client (Top 20)"
+            headerExtra={<ChartSortMenu value={clientSortMode} onChange={setClientSortMode} />}
             height={360}
             modalHeight={520}
-            exportRows={byClient.slice(0, 20)}
+            exportRows={byClientTop20Sorted}
             exportColumns={[
               { key: 'client', label: 'Client' },
               { key: 'hours', label: 'Hours', format: v => v.toLocaleString() },
@@ -220,17 +246,17 @@ export default function HoursTab() {
           >
             {h => (
               <div className="overflow-x-auto">
-                <div style={{ minWidth: Math.max(700, Math.min(byClient.length, 20) * 60) }}>
+                <div style={{ minWidth: Math.max(700, byClientTop20Sorted.length * 60) }}>
                   <ResponsiveContainer width="100%" height={h}>
-                    <BarChart data={byClient.slice(0, 20)} margin={{ top: 24, bottom: 90 }}>
+                    <BarChart data={byClientTop20Sorted} margin={{ top: 24, bottom: 90 }}>
                       <XAxis dataKey="client" tick={{ fill: 'currentColor', fontSize: 11 }}
                         angle={-35} textAnchor="end" interval={0} />
                       <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} />
                       <Tooltip content={<CustomTooltip />} />
                       <Bar dataKey="hours" radius={[6, 6, 0, 0]} cursor="pointer"
                         onClick={d => openClientDrillDown(chartPoint(d).client)}>
-                        {byClient.slice(0, 20).map((_, i) => (
-                          <Cell key={i} fill={sequentialColor(i, Math.min(byClient.length, 20))} />
+                        {byClientTop20Sorted.map((_, i) => (
+                          <Cell key={i} fill={sequentialColor(i, byClientTop20Sorted.length)} />
                         ))}
                         <LabelList dataKey="hours" position="top" formatter={v => v.toLocaleString()} style={labelStyle} />
                       </Bar>
@@ -245,7 +271,7 @@ export default function HoursTab() {
             title="Client Hours Table"
             height={320}
             modalHeight={600}
-            exportRows={byClientExport}
+            exportRows={clientTableSorted}
             exportColumns={[
               { key: 'client', label: 'Client' },
               { key: 'hours', label: 'Hours', format: v => v.toLocaleString() },
@@ -258,13 +284,21 @@ export default function HoursTab() {
                   <thead className="sticky top-0 dark:bg-brand-900 bg-white">
                     <tr className="border-b dark:border-white/10 border-brand-200">
                       <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">#</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">Client</th>
-                      <th className="text-right py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">Hours</th>
-                      <th className="text-right py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">%</th>
+                      {[
+                        { key: 'client', label: 'Client', align: 'text-left' },
+                        { key: 'hours', label: 'Hours', align: 'text-right' },
+                        { key: 'pct', label: '%', align: 'text-right' },
+                      ].map(col => (
+                        <th key={col.key} onClick={() => clientTableSort.handleSort(col.key)}
+                          className={`py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                     dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 ${col.align}`}>
+                          {col.label}{clientTableSort.sortArrow(col.key)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {byClient.map((c, i) => (
+                    {clientTableSorted.map((c, i) => (
                       <tr key={c.client} onClick={() => openClientDrillDown(c.client)}
                         className={`border-b dark:border-white/5 border-brand-100 cursor-pointer
                           hover:dark:bg-white/5 hover:bg-brand-50
@@ -272,9 +306,7 @@ export default function HoursTab() {
                         <td className="py-2 px-3 dark:text-white/40 text-brand-400 text-xs">{i + 1}</td>
                         <td className="py-2 px-3 dark:text-white text-brand-900">{c.client || '—'}</td>
                         <td className="py-2 px-3 text-right font-semibold dark:text-white text-brand-900">{c.hours.toLocaleString()}</td>
-                        <td className="py-2 px-3 text-right dark:text-white/50 text-brand-500 text-xs">
-                          {totalHours > 0 ? roundPct((c.hours / totalHours) * 100) : 0}%
-                        </td>
+                        <td className="py-2 px-3 text-right dark:text-white/50 text-brand-500 text-xs">{c.pct}%</td>
                       </tr>
                     ))}
                   </tbody>
@@ -290,9 +322,10 @@ export default function HoursTab() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <MaximizableChartCard
             title="Hours by Project (Top 20)"
+            headerExtra={<ChartSortMenu value={projectSortMode} onChange={setProjectSortMode} />}
             height={360}
             modalHeight={520}
-            exportRows={byProject.slice(0, 20)}
+            exportRows={byProjectTop20Sorted}
             exportColumns={[
               { key: 'project', label: 'Project' },
               { key: 'client', label: 'Client' },
@@ -301,17 +334,17 @@ export default function HoursTab() {
           >
             {h => (
               <div className="overflow-x-auto">
-                <div style={{ minWidth: Math.max(700, Math.min(byProject.length, 20) * 60) }}>
+                <div style={{ minWidth: Math.max(700, byProjectTop20Sorted.length * 60) }}>
                   <ResponsiveContainer width="100%" height={h}>
-                    <BarChart data={byProject.slice(0, 20)} margin={{ top: 24, bottom: 90 }}>
+                    <BarChart data={byProjectTop20Sorted} margin={{ top: 24, bottom: 90 }}>
                       <XAxis dataKey="project" tick={{ fill: 'currentColor', fontSize: 11 }}
                         angle={-35} textAnchor="end" interval={0} />
                       <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} />
                       <Tooltip content={<CustomTooltip />} />
                       <Bar dataKey="hours" radius={[6, 6, 0, 0]} cursor="pointer"
                         onClick={d => openProjectDrillDown(chartPoint(d).project)}>
-                        {byProject.slice(0, 20).map((_, i) => (
-                          <Cell key={i} fill={sequentialColor(i, Math.min(byProject.length, 20))} />
+                        {byProjectTop20Sorted.map((_, i) => (
+                          <Cell key={i} fill={sequentialColor(i, byProjectTop20Sorted.length)} />
                         ))}
                         <LabelList dataKey="hours" position="top" formatter={v => v.toLocaleString()} style={labelStyle} />
                       </Bar>
@@ -326,7 +359,7 @@ export default function HoursTab() {
             title="Project Hours Table"
             height={320}
             modalHeight={600}
-            exportRows={byProject}
+            exportRows={projectTableSorted}
             exportColumns={[
               { key: 'project', label: 'Project' },
               { key: 'client', label: 'Client' },
@@ -339,13 +372,21 @@ export default function HoursTab() {
                   <thead className="sticky top-0 dark:bg-brand-900 bg-white">
                     <tr className="border-b dark:border-white/10 border-brand-200">
                       <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">#</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">Project</th>
-                      <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">Client</th>
-                      <th className="text-right py-2 px-3 text-xs font-medium uppercase tracking-wider dark:text-white/50 text-brand-500">Hours</th>
+                      {[
+                        { key: 'project', label: 'Project', align: 'text-left' },
+                        { key: 'client', label: 'Client', align: 'text-left' },
+                        { key: 'hours', label: 'Hours', align: 'text-right' },
+                      ].map(col => (
+                        <th key={col.key} onClick={() => projectTableSort.handleSort(col.key)}
+                          className={`py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                     dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 ${col.align}`}>
+                          {col.label}{projectTableSort.sortArrow(col.key)}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {byProject.map((p, i) => (
+                    {projectTableSorted.map((p, i) => (
                       <tr key={p.project + i} onClick={() => openProjectDrillDown(p.project)}
                         className={`border-b dark:border-white/5 border-brand-100 cursor-pointer
                           hover:dark:bg-white/5 hover:bg-brand-50
@@ -390,7 +431,7 @@ export default function HoursTab() {
               />
             </div>
           }
-          exportRows={pivotData.data}
+          exportRows={pivotTableSorted}
           exportColumns={[
             { key: 'label', label: pivotRow === 'WHO' ? 'Employee' : 'Team' },
             { key: 'total', label: 'Total', format: v => v.toLocaleString() },
@@ -406,26 +447,28 @@ export default function HoursTab() {
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0">
                   <tr className="dark:bg-brand-900/90 bg-white">
-                    <th className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                   dark:text-white/50 text-brand-500 border-b dark:border-white/10 border-brand-200
+                    <th onClick={() => pivotTableSort.handleSort('label')}
+                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                   dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 border-b dark:border-white/10 border-brand-200
                                    sticky left-0 dark:bg-brand-900/90 bg-white z-10 min-w-[130px]">
-                      {pivotRow === 'WHO' ? 'Employee' : 'Team'}
+                      {pivotRow === 'WHO' ? 'Employee' : 'Team'}{pivotTableSort.sortArrow('label')}
                     </th>
-                    <th className="text-right py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                   dark:text-white/70 text-brand-700 border-b dark:border-white/10 border-brand-200 min-w-[80px]">
-                      Total
+                    <th onClick={() => pivotTableSort.handleSort('total')}
+                      className="text-right py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                   dark:text-white/70 text-brand-700 dark:hover:text-white hover:text-brand-900 border-b dark:border-white/10 border-brand-200 min-w-[80px]">
+                      Total{pivotTableSort.sortArrow('total')}
                     </th>
                     {pivotData.cols.map(col => (
-                      <th key={col}
-                        className="text-right py-2 px-3 text-xs font-semibold dark:text-white/50 text-brand-500
-                                   border-b dark:border-white/10 border-brand-200 min-w-[90px] max-w-[140px] truncate">
-                        {col || '—'}
+                      <th key={col} onClick={() => pivotTableSort.handleSort(col)}
+                        className="text-right py-2 px-3 text-xs font-semibold cursor-pointer select-none dark:text-white/50 text-brand-500
+                                   dark:hover:text-white hover:text-brand-800 border-b dark:border-white/10 border-brand-200 min-w-[90px] max-w-[140px] truncate">
+                        {col || '—'}{pivotTableSort.sortArrow(col)}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {pivotData.data.map((row, i) => (
+                  {pivotTableSorted.map((row, i) => (
                     <tr key={row.label + i}
                       className={`border-b dark:border-white/5 border-brand-100
                         ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/30' : ''}`}>

@@ -14,6 +14,7 @@ import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import ChartTitleBadge from '../components/common/ChartTitleBadge'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import { useSortableRows } from '../hooks/useSortableRows'
 import { useAuth } from '../context/AuthContext'
 import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
 import {
@@ -692,8 +693,30 @@ export default function ComparisonTab() {
     ),
     [employeeByMonth, tableTeams, tableEmployees]
   )
+  const employeeByMonthIndexed = useMemo(() => employeeTableRows.map((row, i) => ({ ...row, _idx: i })), [employeeTableRows])
+  const employeeByMonthTableSort = useSortableRows(employeeByMonthIndexed, '_idx', 'asc')
+  const employeeByMonthTableSorted = employeeByMonthTableSort.sorted
 
   const teamByMonthExport = useMemo(() => [...teamByMonth, grandSummary], [teamByMonth, grandSummary])
+
+  // Clickable-header sort for this tab's 4 tables — each source array's
+  // current order (chronological for Quarter/Month, calc-determined for
+  // Team/Employee) is preserved as the default view by sorting on a
+  // synthetic `_idx` position field until the user clicks a header; Grand
+  // Summary stays pinned as a footer row, outside the sorted body, like any
+  // total row. Doesn't touch quarterlyFiltered/monthlyCompared/teamByMonth/
+  // employeeTableRows themselves — those still feed the charts/exports above.
+  const quarterlyIndexed = useMemo(() => quarterlyFiltered.map((row, i) => ({ ...row, _idx: i })), [quarterlyFiltered])
+  const quarterlyTableSort = useSortableRows(quarterlyIndexed, '_idx', 'asc')
+  const quarterlyTableSorted = quarterlyTableSort.sorted
+
+  const monthlyIndexed = useMemo(() => monthlyCompared.map((row, i) => ({ ...row, _idx: i })), [monthlyCompared])
+  const monthlyTableSort = useSortableRows(monthlyIndexed, '_idx', 'asc')
+  const monthlyTableSorted = monthlyTableSort.sorted
+
+  const teamByMonthIndexed = useMemo(() => teamByMonth.map((row, i) => ({ ...row, _idx: i })), [teamByMonth])
+  const teamByMonthTableSort = useSortableRows(teamByMonthIndexed, '_idx', 'asc')
+  const teamByMonthTableSorted = teamByMonthTableSort.sorted
 
   // ── Drill-down: clicking an Employees/Hours/Capacity cell in the Quarterly
   // or Monthly table opens a modal scoped to that exact year + period, using
@@ -921,17 +944,23 @@ export default function ComparisonTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Quarter', 'Employees 2025', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
-                  'Employees 2026', 'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500 whitespace-nowrap">
-                    {h}
+                {[
+                  { key: 'quarter', label: 'Quarter' }, { key: 'empCount2025', label: 'Employees 2025' },
+                  { key: 'hours2025', label: 'Hours 2025' }, { key: 'capacity2025', label: 'Capacity 2025' },
+                  { key: 'util2025', label: 'Utilization 2025' }, { key: 'empCount2026', label: 'Employees 2026' },
+                  { key: 'hours2026', label: 'Hours 2026' }, { key: 'capacity2026', label: 'Capacity 2026' },
+                  { key: 'util2026', label: 'Utilization 2026' }, { key: 'growthPct', label: 'Growth %' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => quarterlyTableSort.handleSort(col.key)}
+                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                    {col.label}{quarterlyTableSort.sortArrow(col.key)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {quarterlyFiltered.map((row, i) => (
+              {quarterlyTableSorted.map((row, i) => (
                 <tr key={row.quarter} className={`border-b dark:border-white/5 border-brand-100
                   ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
                   <td className="py-2 px-3 font-medium dark:text-white text-brand-900">
@@ -988,17 +1017,23 @@ export default function ComparisonTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b dark:border-white/10 border-brand-200">
-                  {['Month', 'Employees 2025', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
-                    'Employees 2026', 'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                           dark:text-white/50 text-brand-500 whitespace-nowrap">
-                      {h}
+                  {[
+                    { key: 'month', label: 'Month' }, { key: 'empCount2025', label: 'Employees 2025' },
+                    { key: 'hours2025', label: 'Hours 2025' }, { key: 'capacity2025', label: 'Capacity 2025' },
+                    { key: 'util2025', label: 'Utilization 2025' }, { key: 'empCount2026', label: 'Employees 2026' },
+                    { key: 'hours2026', label: 'Hours 2026' }, { key: 'capacity2026', label: 'Capacity 2026' },
+                    { key: 'util2026', label: 'Utilization 2026' }, { key: 'growthPct', label: 'Growth %' },
+                  ].map(col => (
+                    <th key={col.key} onClick={() => monthlyTableSort.handleSort(col.key)}
+                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                 dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                      {col.label}{monthlyTableSort.sortArrow(col.key)}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {monthlyCompared.map((row, i) => (
+                {monthlyTableSorted.map((row, i) => (
                   <tr key={row.month} className={`border-b dark:border-white/5 border-brand-100
                     ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
                     <td className="py-2 px-3 font-medium dark:text-white text-brand-900">
@@ -1135,17 +1170,23 @@ export default function ComparisonTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Team', 'Employees 2025', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
-                  'Employees 2026', 'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500 whitespace-nowrap">
-                    {h}
+                {[
+                  { key: 'team', label: 'Team' }, { key: 'empCount2025', label: 'Employees 2025' },
+                  { key: 'hours2025', label: 'Hours 2025' }, { key: 'capacity2025', label: 'Capacity 2025' },
+                  { key: 'util2025', label: 'Utilization 2025' }, { key: 'empCount2026', label: 'Employees 2026' },
+                  { key: 'hours2026', label: 'Hours 2026' }, { key: 'capacity2026', label: 'Capacity 2026' },
+                  { key: 'util2026', label: 'Utilization 2026' }, { key: 'delta', label: 'Growth %' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => teamByMonthTableSort.handleSort(col.key)}
+                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                    {col.label}{teamByMonthTableSort.sortArrow(col.key)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {teamByMonth.map((row, i) => (
+              {teamByMonthTableSorted.map((row, i) => (
                 <tr key={row.team} className={`border-b dark:border-white/5 border-brand-100
                   ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
                   <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{row.team}</td>
@@ -1219,17 +1260,23 @@ export default function ComparisonTab() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 dark:bg-brand-900 bg-white">
               <tr className="border-b dark:border-white/10 border-brand-200">
-                {['Team', 'Employee', 'Hours 2025', 'Capacity 2025', 'Utilization 2025',
-                  'Hours 2026', 'Capacity 2026', 'Utilization 2026', 'Growth %'].map(h => (
-                  <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                         dark:text-white/50 text-brand-500 whitespace-nowrap">
-                    {h}
+                {[
+                  { key: 'team', label: 'Team' }, { key: 'name', label: 'Employee' },
+                  { key: 'hours2025', label: 'Hours 2025' }, { key: 'capacity2025', label: 'Capacity 2025' },
+                  { key: 'util2025', label: 'Utilization 2025' }, { key: 'hours2026', label: 'Hours 2026' },
+                  { key: 'capacity2026', label: 'Capacity 2026' }, { key: 'util2026', label: 'Utilization 2026' },
+                  { key: 'delta', label: 'Growth %' },
+                ].map(col => (
+                  <th key={col.key} onClick={() => employeeByMonthTableSort.handleSort(col.key)}
+                    className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                               dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800 whitespace-nowrap">
+                    {col.label}{employeeByMonthTableSort.sortArrow(col.key)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {employeeTableRows.map((row, i) => (
+              {employeeByMonthTableSorted.map((row, i) => (
                 <tr key={row.name} className={`border-b dark:border-white/5 border-brand-100
                   ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}>
                   <td className="py-2 px-3 dark:text-white/60 text-brand-600 text-xs">{row.team}</td>

@@ -14,6 +14,9 @@ import KPIRingCard from '../components/common/KPIRingCard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
+import ChartSortMenu from '../components/common/ChartSortMenu'
+import { sortChartRows, SORT_MODES } from '../utils/chartSort'
+import { useSortableRows } from '../hooks/useSortableRows'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, Cell, LabelList, PieChart, Pie,
@@ -293,6 +296,8 @@ export default function BillableTab() {
     })),
     [byEmployee]
   )
+  const billableTableSort = useSortableRows(byEmployeeExport, 'total', 'desc')
+  const billableTableSorted = billableTableSort.sorted
 
   const pieData = [
     { name: 'Billable',     value: totalBillable,    color: BILLABLE_COLOR,     category: 'billable' },
@@ -307,6 +312,23 @@ export default function BillableTab() {
     month:    { hours: byMonth,         pct: byMonthPct,        labelKey: 'period' },
     quarter:  { hours: byQuarter,       pct: byQuarterPct,      labelKey: 'period' },
   }[viewMode]
+
+  // Sort dropdown — only meaningful for the category-based views (Team,
+  // Employee); By Month/By Quarter stay in chronological order, same rule
+  // as every other timeline chart in the app. Both charts sort on 'total'
+  // (the underlying absolute hours) so the Hours and Share-of-Time charts
+  // rank categories the same way even though one shows % instead of hours.
+  const chartSortable = viewMode === 'team' || viewMode === 'employee'
+  const [hoursSortMode, setHoursSortMode] = useState(SORT_MODES.DESC)
+  const [pctSortMode, setPctSortMode] = useState(SORT_MODES.DESC)
+  const hoursSorted = useMemo(
+    () => (chartSortable ? sortChartRows(viewData.hours, hoursSortMode, 'total', viewData.labelKey) : viewData.hours),
+    [viewData, chartSortable, hoursSortMode]
+  )
+  const pctSorted = useMemo(
+    () => (chartSortable ? sortChartRows(viewData.pct, pctSortMode, 'total', viewData.labelKey) : viewData.pct),
+    [viewData, chartSortable, pctSortMode]
+  )
 
   // Drill-down — click a pie slice to see who logged that category's hours;
   // click a stacked bar segment to see the employee breakdown behind that
@@ -435,9 +457,10 @@ export default function BillableTab() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MaximizableChartCard
           title={`Hours — ${VIEWS.find(v => v.id === viewMode).label}`}
+          headerExtra={chartSortable ? <ChartSortMenu value={hoursSortMode} onChange={setHoursSortMode} /> : undefined}
           height={360}
           modalHeight={520}
-          exportRows={viewData.hours}
+          exportRows={hoursSorted}
           exportColumns={[
             { key: viewData.labelKey, label: LABEL_COLUMN[viewData.labelKey] },
             { key: 'billable', label: 'Billable (hrs)', format: fmtHours },
@@ -446,13 +469,14 @@ export default function BillableTab() {
             { key: 'total', label: 'Total (hrs)', format: fmtHours },
           ]}
         >
-          {h => <HoursStackedChart data={viewData.hours} labelKey={viewData.labelKey} height={h} onSegmentClick={openSegmentDrillDown} />}
+          {h => <HoursStackedChart data={hoursSorted} labelKey={viewData.labelKey} height={h} onSegmentClick={openSegmentDrillDown} />}
         </MaximizableChartCard>
         <MaximizableChartCard
           title={`Share of Time (%) — ${VIEWS.find(v => v.id === viewMode).label}`}
+          headerExtra={chartSortable ? <ChartSortMenu value={pctSortMode} onChange={setPctSortMode} /> : undefined}
           height={360}
           modalHeight={520}
-          exportRows={viewData.pct}
+          exportRows={pctSorted}
           exportColumns={[
             { key: viewData.labelKey, label: LABEL_COLUMN[viewData.labelKey] },
             { key: 'billablePct', label: 'Billable %', format: fmtPct },
@@ -460,14 +484,14 @@ export default function BillableTab() {
             { key: 'exchangePct', label: 'Exchange %', format: fmtPct },
           ]}
         >
-          {h => <PercentStackedChart data={viewData.pct} labelKey={viewData.labelKey} height={h} onSegmentClick={openSegmentDrillDown} />}
+          {h => <PercentStackedChart data={pctSorted} labelKey={viewData.labelKey} height={h} onSegmentClick={openSegmentDrillDown} />}
         </MaximizableChartCard>
       </div>
 
       {/* Employee table */}
       <MaximizableChartCard
         title="Billable Details by Employee"
-        exportRows={byEmployeeExport}
+        exportRows={billableTableSorted}
         exportColumns={[
           { key: 'name', label: 'Employee' },
           { key: 'team', label: 'Team' },
@@ -483,17 +507,26 @@ export default function BillableTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b dark:border-white/10 border-brand-200">
-                  {['Employee', 'Team', 'Billable (hrs)', 'Non-Billable (hrs)', 'Exchange (hrs)', 'Total (hrs)', 'Billable %'].map(h => (
-                    <th key={h} className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider
-                                           dark:text-white/50 text-brand-500">
-                      {h}
+                  {[
+                    { key: 'name', label: 'Employee' },
+                    { key: 'team', label: 'Team' },
+                    { key: 'billable', label: 'Billable (hrs)' },
+                    { key: 'nonBillable', label: 'Non-Billable (hrs)' },
+                    { key: 'exchange', label: 'Exchange (hrs)' },
+                    { key: 'total', label: 'Total (hrs)' },
+                    { key: 'billablePct', label: 'Billable %' },
+                  ].map(col => (
+                    <th key={col.key} onClick={() => billableTableSort.handleSort(col.key)}
+                      className="text-left py-2 px-3 text-xs font-medium uppercase tracking-wider cursor-pointer select-none
+                                 dark:text-white/50 text-brand-500 dark:hover:text-white hover:text-brand-800">
+                      {col.label}{billableTableSort.sortArrow(col.key)}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {byEmployee.map((emp, i) => {
-                  const pct = emp.total > 0 ? roundPct((emp.billable / emp.total) * 100) : 0
+                {billableTableSorted.map((emp, i) => {
+                  const pct = emp.billablePct
                   return (
                     <tr
                       key={emp.name}
