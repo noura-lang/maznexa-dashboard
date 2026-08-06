@@ -81,9 +81,34 @@ const TAG_WHITELIST = ['Meeting', 'Reporting', 'Follow up', 'Brainstorming', 'Re
 const DAY_FULL_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 // Fixed tag -> color/text mapping (not rank-based) so the same tag always
-// gets the same color across the pie chart and the per-employee chart.
+// gets the same color on the "Hours by Time Log Tag" pie chart.
 const TAG_COLOR_MAP = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, SEQUENTIAL_STOPS[i]]))
 const TAG_TEXT_MAP  = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, i <= 3 ? LABEL_ON_LIGHT : LABEL_ON_DARK]))
+
+// The horizontal "Hours by Time Log Tag per Employee" chart has its own
+// requested palette/text-contrast pairing — deliberately separate from
+// TAG_COLOR_MAP/TAG_TEXT_MAP above so the pie chart's colors stay untouched.
+const TAG_BAR_COLORS = ['#3D3580', '#6B5FCC', '#9354FF', '#B893FF', '#CECBF6', '#E4D6FF']
+const TAG_BAR_COLOR_MAP = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, TAG_BAR_COLORS[i % TAG_BAR_COLORS.length]]))
+const TAG_BAR_TEXT_MAP  = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, i >= 4 ? '#131321' : '#ffffff']))
+
+// Renders one on-segment hours label for the per-employee stacked bar,
+// hidden below an 8%-of-row-total share (the segment is still fully
+// available via the tooltip on hover). Closes over the sorted data array
+// and looks the row up by `index` — LabelList's content callback doesn't
+// reliably receive the full row as `payload`, only x/y/width/height/value.
+function renderTagSegmentLabel(data, textColor) {
+  return function TagSegmentLabel({ x, y, width, height, value, index }) {
+    const row = data[index]
+    const total = row?.total || 0
+    if (!value || total <= 0 || value / total < 0.08) return null
+    return (
+      <text x={x + width / 2} y={y + height / 2} dy={3} textAnchor="middle" fontSize={9} fontWeight={500} fill={textColor}>
+        {fmtHours(value)}
+      </text>
+    )
+  }
+}
 
 // ─── Dark Mode bar "depth" (Weekly Report only) ───────────────────────────
 // Every bar-chart color used on this tab (utilizationColor's 6 stops, the
@@ -1505,12 +1530,14 @@ export default function WeeklyReport() {
         )}
       </MaximizableChartCard>
 
-      {/* Time Log Tags — per employee */}
+      {/* Time Log Tags — per employee, horizontal stacked (one row per
+          employee): name on the left (YAxis), each tag's hours stacked
+          left-to-right, total hours on the right of the last segment. */}
       <MaximizableChartCard
         title="Hours by Time Log Tag per Employee (Top 15)"
         headerExtra={<ChartSortMenu value={tagPerEmpSortMode} onChange={setTagPerEmpSortMode} />}
-        height={380}
-        modalHeight={560}
+        height={Math.max(380, top15TagByEmployeeSorted.length * 32 + 60)}
+        modalHeight={Math.max(560, top15TagByEmployeeSorted.length * 36 + 100)}
         exportRows={top15TagByEmployeeSorted}
         exportColumns={[
           { key: 'name', label: 'Employee' },
@@ -1519,38 +1546,40 @@ export default function WeeklyReport() {
         ]}
       >
         {h => (
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: Math.max(700, top15TagByEmployeeSorted.length * 70) }}>
-              <ResponsiveContainer width="100%" height={h}>
-                <BarChart data={top15TagByEmployeeSorted} margin={{ top: 32, bottom: 90 }}>
-                  <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }}
-                    angle={-35} textAnchor="end" interval={0} />
-                  <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={fmtHours} />
-                  <Tooltip content={<TagHoursTooltip />} />
-                  <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-                  {TAG_WHITELIST.map((tag, i) => {
-                    const maxTotal = Math.max(...top15TagByEmployeeSorted.map(d => d.total), 1)
-                    const labelFmt = v => (v > 0 && v / maxTotal > 0.04 ? fmtHours(v) : '')
-                    return (
-                      <Bar
-                        key={tag}
-                        dataKey={tag}
-                        name={tag}
-                        stackId="a"
-                        fill={barFill(TAG_COLOR_MAP[tag], isDark)}
-                        radius={i === TAG_WHITELIST.length - 1 ? [6, 6, 0, 0] : [0, 0, 0, 0]}
-                        cursor="pointer"
-                        onClick={handleTagPerEmployeeBarClick}
-                      >
-                        <LabelList dataKey={tag} position="center" formatter={labelFmt}
-                          style={{ fill: TAG_TEXT_MAP[tag], fontSize: 10, fontWeight: 500 }} />
-                      </Bar>
-                    )
-                  })}
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+          <ResponsiveContainer width="100%" height={h}>
+            <BarChart data={top15TagByEmployeeSorted} layout="vertical"
+              margin={{ top: 32, right: 56, left: 8, bottom: 8 }}
+              barSize={24} barCategoryGap={8}>
+              <XAxis type="number" hide />
+              <YAxis type="category" dataKey="name" width={110} axisLine={false} tickLine={false}
+                tick={{ fill: '#ccc', fontSize: 10 }} />
+              <Tooltip content={<TagHoursTooltip />} />
+              <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
+              {TAG_WHITELIST.map((tag, i) => {
+                const isFirst = i === 0
+                const isLast = i === TAG_WHITELIST.length - 1
+                const radius = isFirst ? [5, 0, 0, 5] : isLast ? [0, 5, 5, 0] : [0, 0, 0, 0]
+                return (
+                  <Bar
+                    key={tag}
+                    dataKey={tag}
+                    name={tag}
+                    stackId="a"
+                    fill={TAG_BAR_COLOR_MAP[tag]}
+                    radius={radius}
+                    cursor="pointer"
+                    onClick={handleTagPerEmployeeBarClick}
+                  >
+                    <LabelList dataKey={tag} content={renderTagSegmentLabel(top15TagByEmployeeSorted, TAG_BAR_TEXT_MAP[tag])} />
+                    {isLast && (
+                      <LabelList dataKey="total" position="right" formatter={fmtHours}
+                        style={{ fill: '#ffffff', fontSize: 10, fontWeight: 500 }} />
+                    )}
+                  </Bar>
+                )
+              })}
+            </BarChart>
+          </ResponsiveContainer>
         )}
       </MaximizableChartCard>
 
