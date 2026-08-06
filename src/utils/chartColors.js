@@ -35,25 +35,13 @@ export function sequentialColor(index, total) {
 export const DARK_PROFESSIONAL_COLOR  = '#B893FF'
 export const DARK_PROFESSIONAL_BORDER = '#E4D6FF'
 
-// Shared on-bar data-label colors — every bar chart's LabelList picks
-// between these two based on its own bar's fill, so a label is always
-// readable against the exact color behind it instead of a static
-// 'currentColor' guess that can go invisible on light bars in dark mode
-// (or vice versa).
-export const LABEL_ON_LIGHT = '#4B2D8A'
+// Every bar chart's on-bar data label is a fixed white, full stop — not
+// picked per bar color, tier, or theme. LABEL_ON_LIGHT/LABEL_ON_DARK stay as
+// two names (both white) so every existing call site — labelColorForBg(hex),
+// or either constant directly — keeps working unchanged.
+export const LABEL_ON_LIGHT = '#ffffff'
 export const LABEL_ON_DARK  = '#ffffff'
 
-function relativeLuminance(hex) {
-  const clean = hex.replace('#', '')
-  const r = parseInt(clean.substring(0, 2), 16)
-  const g = parseInt(clean.substring(2, 4), 16)
-  const b = parseInt(clean.substring(4, 6), 16)
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255
-}
-
-// > 0.6 covers the palette's two lightest stops (and the dark-mode
-// Professional-tier swap, #B893FF) — everything else in the brand-purple
-// range reads better with a white label.
-export function labelColorForBg(hex) {
-  return relativeLuminance(hex) > 0.6 ? LABEL_ON_LIGHT : LABEL_ON_DARK
+export function labelColorForBg() {
+  return '#ffffff'
 }
