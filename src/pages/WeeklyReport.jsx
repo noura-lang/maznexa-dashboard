@@ -10,7 +10,7 @@ import {
   calcYTDUtilization, calcYTDMonthlyTrend, calcTeamUtilizationByDayOfWeek,
   utilizationColor, calcHoursByTag, calcTagHoursByEmployee, calcEmployeeHoursByTag,
   filterTasksByDate, calcTaskStatusByEmployee, buildTasksPivot, calcOverdueTaskCountByEmployee,
-  getEmployeeTasksInRange, calcTaskSummaryByEmployee, filterTasksByAllowedNames,
+  getEmployeeTasksInRange, getOverdueTasksForEmployee, calcTaskSummaryByEmployee, filterTasksByAllowedNames,
   calcCapacityByEmployeeForWeeklyReport, calcTeamUtilizationSummaryForWeeklyReport,
   calcCapacitySummaryForWeeklyReport, calcGrowthPct,
 } from '../api/transformData'
@@ -591,6 +591,80 @@ function EmployeeTasksModal({ drillDown, onClose }) {
   )
 }
 
+// Employee's overdue task list — opened by clicking a bar in "Overdue Tasks
+// by Employee". `tasks` is already scoped to that employee + the same
+// filteredTasks/calcOverdueDays > 0 rule the chart's own count came from, so
+// the row count here always matches the bar that opened it. Same modal
+// shell/style as EmployeeTasksModal above; each row opens Teamwork in a new
+// tab via TeamworkLink instead of doing anything in-dashboard.
+function OverdueTasksModal({ drillDown, onClose }) {
+  if (!drillDown) return null
+  const { name, tasks } = drillDown
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-2xl shadow-2xl
+                   border dark:border-white/10 border-brand-200
+                   dark:bg-brand-950 bg-white"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b dark:border-white/10 border-brand-200">
+          <h3 className="text-base font-semibold dark:text-white text-brand-900">Overdue Tasks — {name}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-lg leading-none px-2 dark:text-white/50 text-brand-400
+                       hover:dark:text-white hover:text-brand-800"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-4">
+          {tasks.length === 0 ? (
+            <p className="text-sm text-center py-8 dark:text-white/50 text-brand-500">
+              No overdue tasks found
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {tasks.map((t, i) => (
+                <li key={t.taskId || i}>
+                  <a
+                    href={`https://maznexa.teamwork.com/#/tasks/${t.taskId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm
+                      dark:hover:bg-white/[0.06] hover:bg-brand-50
+                      ${i % 2 === 0 ? 'dark:bg-white/[0.02] bg-brand-50/50' : ''}`}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium dark:text-white text-brand-900 truncate" title={t.taskName}>
+                        {t.taskName || '—'}
+                      </span>
+                      {t.project && (
+                        <span className="block text-xs dark:text-white/50 text-brand-500 truncate">{t.project}</span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-xs font-semibold text-red-400 whitespace-nowrap">
+                      {t.overdueDays}d overdue
+                    </span>
+                    <span className="shrink-0 dark:text-white/40 text-brand-400">↗</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Per-tag employee breakdown — opened by clicking a slice of the "Hours by
 // Time Log Tag" donut. `employees` is already scoped to that tag + the
 // current filters by the caller. Same modal shell/style as the others above.
@@ -1071,6 +1145,18 @@ export default function WeeklyReport() {
     () => sortChartRows(overdueByEmployee, overdueSortMode, 'count', 'name'),
     [overdueByEmployee, overdueSortMode]
   )
+
+  // ─── "Overdue Tasks by Employee" drill-down — click a bar to see that
+  // employee's actual overdue tasks, read from the exact same filteredTasks
+  // rows overdueByEmployee counted from, so the modal's list always matches
+  // the bar's own count.
+  const [overdueTasksDrillDown, setOverdueTasksDrillDown] = useState(null) // { name, tasks } | null
+  function handleOverdueBarClick(data) {
+    const point = chartPoint(data)
+    if (!point?.name) return
+    const tasks = getOverdueTasksForEmployee(filteredTasks, point.name)
+    setOverdueTasksDrillDown({ name: point.name, tasks })
+  }
   // Clickable column headers — defaults to the same "most overdue first"
   // order taskPivot's own useMemo already sorts by, so nothing changes
   // visually until a header is clicked.
@@ -1681,7 +1767,8 @@ export default function WeeklyReport() {
                           angle={-35} textAnchor="end" interval={0} />
                         <YAxis tick={{ fill: 'currentColor', fontSize: 11 }} allowDecimals={false} />
                         <Tooltip content={<GenericTooltip />} />
-                        <Bar dataKey="count" name="Overdue Tasks" radius={[6, 6, 0, 0]}>
+                        <Bar dataKey="count" name="Overdue Tasks" radius={[6, 6, 0, 0]}
+                          cursor="pointer" onClick={handleOverdueBarClick}>
                           {overdueSorted.map((_, i) => (
                             <Cell key={i} fill={barFill(sequentialColor(i, overdueSorted.length), isDark)} />
                           ))}
@@ -1797,6 +1884,7 @@ export default function WeeklyReport() {
       <PeriodDrillDownModal drillDown={periodDrillDown} onClose={() => setPeriodDrillDown(null)} isDark={isDark} />
       <EmployeeTasksModal drillDown={employeeTasksDrillDown} onClose={() => setEmployeeTasksDrillDown(null)} />
       <TagEmployeesModal drillDown={tagEmployeesDrillDown} onClose={() => setTagEmployeesDrillDown(null)} />
+      <OverdueTasksModal drillDown={overdueTasksDrillDown} onClose={() => setOverdueTasksDrillDown(null)} />
     </div>
   )
 }

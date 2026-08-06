@@ -848,6 +848,25 @@ export function calcOverdueTaskCountByEmployee(taskRows, capacityRows) {
     .sort((a, b) => b.count - a.count)
 }
 
+// "Overdue Tasks by Employee" chart's drill-down — the exact overdue task
+// rows (same taskRows + same calcOverdueDays > 0 rule) that
+// calcOverdueTaskCountByEmployee counted for this one employee, so the
+// modal's list always reconciles with the bar's own count.
+export function getOverdueTasksForEmployee(taskRows, employeeName) {
+  const today = new Date()
+  return taskRows
+    .filter(row => splitAssignees(row['ASSIGNEE(S)']).includes(employeeName))
+    .map(row => ({
+      taskId:      row['TASK ID'],
+      taskName:    row['TASK NAME'],
+      project:     row['PROJECT'] || '',
+      dueDate:     row['DUE DATE'],
+      overdueDays: calcOverdueDays(row, today),
+    }))
+    .filter(t => t.overdueDays && t.overdueDays > 0)
+    .sort((a, b) => b.overdueDays - a.overdueDays)
+}
+
 export function buildTasksPivot(rows) {
   const today = new Date()
   return rows.map(row => ({
