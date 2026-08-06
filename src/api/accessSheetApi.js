@@ -20,8 +20,8 @@ export const ACCESS_TABS = {
 export const EMPLOYEES_COLUMNS = ['Email', 'Name', 'Team', 'Role']
 export const PERMISSION_COLUMNS = [
   'Email', 'Weekly Report', 'Billable View', 'Hours Report', 'Utilization',
-  'Task Details', 'Tags', 'Account Managers Performance', 'Cost Analysis', 'Data Scope',
-  'Financial Access', 'Export', 'Admin',
+  'Task Details', 'Tags', 'Account Managers Performance', 'Cost Analysis', 'Business Development',
+  'Data Scope', 'Financial Access', 'Export', 'Admin',
 ]
 
 async function sheetsRequest(accessToken, path, options = {}) {
@@ -121,6 +121,7 @@ export const DEFAULT_DENIED_PERMISSIONS = {
   tags:            false,
   amPerformance:   false,
   costAnalysis:    false,
+  bizDev:          false,
   dataScope:       DATA_SCOPES.MY_DATA,
   financialAccess: false,
   export:          false,
@@ -138,6 +139,7 @@ export function parsePermissionsRow(row) {
     tags:            parseBool(row['Tags']),
     amPerformance:   parseBool(row['Account Managers Performance']),
     costAnalysis:    parseBool(row['Cost Analysis']),
+    bizDev:          parseBool(row['Business Development']),
     dataScope:       row['Data Scope'] || DATA_SCOPES.MY_DATA,
     financialAccess: parseBool(row['Financial Access']),
     export:          parseBool(row['Export']),
@@ -158,6 +160,7 @@ export function permissionsToRow(email, permissions) {
     'Tags':            boolToCell(permissions.tags),
     'Account Managers Performance': boolToCell(permissions.amPerformance),
     'Cost Analysis':   boolToCell(permissions.costAnalysis),
+    'Business Development': boolToCell(permissions.bizDev),
     'Data Scope':      permissions.dataScope,
     'Financial Access': boolToCell(permissions.financialAccess),
     'Export':          boolToCell(permissions.export),

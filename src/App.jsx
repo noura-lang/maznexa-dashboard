@@ -15,6 +15,7 @@ import TagsTab from './pages/TagsTab'
 import AmPerformanceTab from './pages/AmPerformanceTab'
 import CostAnalysisTab from './pages/CostAnalysisTab'
 import AdminPanelTab from './pages/AdminPanelTab'
+import BizDevTab from './pages/BizDevTab'
 
 const PAGES = {
   weekly:       WeeklyReport,
@@ -25,6 +26,7 @@ const PAGES = {
   tags:         TagsTab,
   amPerformance: AmPerformanceTab,
   costAnalysis: CostAnalysisTab,
+  bizDev:       BizDevTab,
   adminPanel:   AdminPanelTab,
 }
 
@@ -40,6 +42,7 @@ export const TAB_PERMISSION_KEYS = {
   tags:         'tags',
   amPerformance: 'amPerformance',
   costAnalysis: 'costAnalysis',
+  bizDev:       'bizDev',
 }
 
 function DashboardShell() {
@@ -85,7 +88,7 @@ function DashboardShell() {
             </div>
           </div>
         )}
-        {activeTab && !['comparison', 'adminPanel', 'amPerformance', 'costAnalysis'].includes(activeTab) && <FilterBar />}
+        {activeTab && !['comparison', 'adminPanel', 'amPerformance', 'costAnalysis', 'bizDev'].includes(activeTab) && <FilterBar />}
         <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 pb-12 w-full">
           {Page ? (
             <Page />

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { id: 'tags',          icon: '🏷️', label: 'Tags' },
   { id: 'amPerformance', icon: '👥', label: 'Account Managers Performance' },
   { id: 'costAnalysis',  icon: '🧾', label: 'Cost Analysis' },
+  { id: 'bizDev',        icon: '🚀', label: 'Business Development' },
 ]
 const ADMIN_ITEM = { id: 'adminPanel', icon: '⚙️', label: 'Admin Panel' }
 

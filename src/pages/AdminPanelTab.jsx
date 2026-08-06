@@ -16,6 +16,7 @@ const BOOL_FIELDS = [
   { key: 'tags',            label: 'Tags' },
   { key: 'amPerformance',   label: 'AM Performance' },
   { key: 'costAnalysis',    label: 'Cost Analysis' },
+  { key: 'bizDev',          label: 'Business Development' },
   { key: 'financialAccess', label: 'Financial Access' },
   { key: 'export',          label: 'Export' },
   { key: 'admin',           label: 'Admin' },
