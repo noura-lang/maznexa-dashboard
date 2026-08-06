@@ -12,7 +12,7 @@ import KPIRingCard from '../components/common/KPIRingCard'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
 import Dropdown from '../components/common/Dropdown'
 import MultiSelect from '../components/common/MultiSelect'
-import { CHART_COLORS } from '../utils/chartColors'
+import { CHART_COLORS, labelColorForBg } from '../utils/chartColors'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, LabelList,
@@ -263,11 +263,11 @@ export default function AmPerformanceTab() {
                   <RechartsLegend content={<BrandLegend />} />
                   <Bar dataKey="targetValue" name="Target Value" fill={CHART_COLORS[1]} radius={[6, 6, 0, 0]}>
                     <LabelList dataKey="targetValue" position="top" formatter={fmtSAR}
-                      style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                      style={{ fill: labelColorForBg(CHART_COLORS[1]), fontSize: 10, fontWeight: 500 }} />
                   </Bar>
                   <Bar dataKey="actual" name="Total Actual" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]}>
                     <LabelList dataKey="actual" position="top" formatter={fmtSAR}
-                      style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                      style={{ fill: labelColorForBg(CHART_COLORS[5]), fontSize: 10, fontWeight: 500 }} />
                   </Bar>
                   <Line dataKey="remaining" name="Remaining to Target" stroke={ACCENT_LINE} strokeWidth={2} dot={{ r: 4 }}>
                     <LabelList dataKey="remaining" position="top" formatter={fmtSAR}
@@ -299,11 +299,11 @@ export default function AmPerformanceTab() {
                   <RechartsLegend content={<BrandLegend />} />
                   <Bar yAxisId="left" dataKey="upsell" name="Total Upsell (SAR)" fill={CHART_COLORS[2]} radius={[6, 6, 0, 0]}>
                     <LabelList dataKey="upsell" position="top" formatter={fmtSAR} angle={-60}
-                      style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                      style={{ fill: labelColorForBg(CHART_COLORS[2]), fontSize: 10, fontWeight: 500 }} />
                   </Bar>
                   <Bar yAxisId="left" dataKey="actual" name="Total Actual (SAR)" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]}>
                     <LabelList dataKey="actual" position="top" formatter={fmtSAR} angle={-60}
-                      style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                      style={{ fill: labelColorForBg(CHART_COLORS[5]), fontSize: 10, fontWeight: 500 }} />
                   </Bar>
                   <Line yAxisId="right" dataKey="gpMarginPct" name="GP Margin %" stroke={ACCENT_LINE} strokeWidth={2} dot={{ r: 3 }}>
                     <LabelList dataKey="gpMarginPct" position="top" formatter={v => `${v}%`}

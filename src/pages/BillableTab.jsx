@@ -22,6 +22,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, Cell, LabelList, PieChart, Pie,
 } from 'recharts'
+import { labelColorForBg } from '../utils/chartColors'
 
 // Same brand order everywhere: Billable (purple) -> Non-Billable (blue) -> Exchange (darkest purple)
 const BILLABLE_COLOR     = '#6858a2'
@@ -120,13 +121,13 @@ function HoursStackedChart({ data, labelKey, height = 360, onSegmentClick }) {
             <Tooltip content={<HoursTooltip />} />
             <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
             <Bar dataKey="billable" name="Billable" stackId="a" fill={BILLABLE_COLOR} cursor={cursor} onClick={click('billable')}>
-              <LabelList dataKey="billable" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+              <LabelList dataKey="billable" position="center" formatter={labelFmt} style={{ fill: labelColorForBg(BILLABLE_COLOR), fontSize: 11, fontWeight: 500 }} />
             </Bar>
             <Bar dataKey="nonBillable" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR} cursor={cursor} onClick={click('nonBillable')}>
-              <LabelList dataKey="nonBillable" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
+              <LabelList dataKey="nonBillable" position="center" formatter={labelFmt} style={{ fill: labelColorForBg(NON_BILLABLE_COLOR), fontSize: 11, fontWeight: 500 }} />
             </Bar>
             <Bar dataKey="exchange" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]} cursor={cursor} onClick={click('exchange')}>
-              <LabelList dataKey="exchange" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+              <LabelList dataKey="exchange" position="center" formatter={labelFmt} style={{ fill: labelColorForBg(EXCHANGE_COLOR), fontSize: 11, fontWeight: 500 }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>
@@ -150,13 +151,13 @@ function PercentStackedChart({ data, labelKey, height = 360, onSegmentClick }) {
             <Tooltip content={<PercentTooltip />} />
             <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
             <Bar dataKey="billablePct" name="Billable" stackId="a" fill={BILLABLE_COLOR} cursor={cursor} onClick={click('billable')}>
-              <LabelList dataKey="billablePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+              <LabelList dataKey="billablePct" position="center" formatter={labelFmt} style={{ fill: labelColorForBg(BILLABLE_COLOR), fontSize: 11, fontWeight: 500 }} />
             </Bar>
             <Bar dataKey="nonBillablePct" name="Non-Billable" stackId="a" fill={NON_BILLABLE_COLOR} cursor={cursor} onClick={click('nonBillable')}>
-              <LabelList dataKey="nonBillablePct" position="center" formatter={labelFmt} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
+              <LabelList dataKey="nonBillablePct" position="center" formatter={labelFmt} style={{ fill: labelColorForBg(NON_BILLABLE_COLOR), fontSize: 11, fontWeight: 500 }} />
             </Bar>
             <Bar dataKey="exchangePct" name="Exchange" stackId="a" fill={EXCHANGE_COLOR} radius={[6, 6, 0, 0]} cursor={cursor} onClick={click('exchange')}>
-              <LabelList dataKey="exchangePct" position="center" formatter={labelFmt} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+              <LabelList dataKey="exchangePct" position="center" formatter={labelFmt} style={{ fill: labelColorForBg(EXCHANGE_COLOR), fontSize: 11, fontWeight: 500 }} />
             </Bar>
           </BarChart>
         </ResponsiveContainer>

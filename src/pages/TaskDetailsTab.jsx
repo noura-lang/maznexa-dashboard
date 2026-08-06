@@ -8,7 +8,7 @@ import {
   filterTasksByDate,
 } from '../api/transformData'
 import { DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
-import { CHART_COLORS } from '../utils/chartColors'
+import { CHART_COLORS, labelColorForBg } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
@@ -35,6 +35,20 @@ function tagColor(tag) {
   let hash = 0
   for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) >>> 0
   return CHART_COLORS[hash % CHART_COLORS.length]
+}
+
+// Both bar charts below cycle each bar through a different fill (index-based
+// CHART_COLORS, or a per-tag hash color) — this renders one on-bar label per
+// bar, contrast-matched to that specific bar's own color via `getColor(index)`.
+function renderCycleLabel(getColor) {
+  return function CycleLabel({ x, y, width, value, index }) {
+    return (
+      <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={500}
+        fill={labelColorForBg(getColor(index))}>
+        {value}
+      </text>
+    )
+  }
 }
 
 function StatusBadge({ status }) {
@@ -648,7 +662,7 @@ export default function TaskDetailsTab() {
                       {tagByEmployeeSorted.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
-                      <LabelList dataKey="count" position="top" style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
+                      <LabelList dataKey="count" content={renderCycleLabel(i => CHART_COLORS[i % CHART_COLORS.length])} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -698,7 +712,7 @@ export default function TaskDetailsTab() {
                       {filteredHoursByTagSorted.map(row => (
                         <Cell key={row.tag} fill={tagColor(row.tag)} />
                       ))}
-                      <LabelList dataKey="hours" position="top" style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }} />
+                      <LabelList dataKey="hours" content={renderCycleLabel(i => tagColor(filteredHoursByTagSorted[i]?.tag ?? ''))} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>

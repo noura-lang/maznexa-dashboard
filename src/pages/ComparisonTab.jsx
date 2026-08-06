@@ -21,6 +21,7 @@ import { useSortableRows } from '../hooks/useSortableRows'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { DATA_SCOPES, DEFAULT_DENIED_PERMISSIONS } from '../api/accessSheetApi'
+import { labelColorForBg } from '../utils/chartColors'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, Cell, LabelList, PieChart, Pie,
@@ -240,14 +241,14 @@ function CompareBarChart({ data, dataKeyPrefix, xKey, unit, height = 220, onBarC
         <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 8, fontSize: '12px' }} />
         <Bar dataKey={key2025} name="2025" fill={COLOR_2025} radius={[4, 4, 0, 0]}
           onClick={onBarClick ? () => onBarClick(2025) : undefined} {...barCursor}>
-          <LabelList dataKey={key2025} position="top" formatter={labelFormatter} style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+          <LabelList dataKey={key2025} position="top" formatter={labelFormatter} style={{ fill: labelColorForBg(COLOR_2025), fontSize: 10, fontWeight: 500 }} />
         </Bar>
         <Bar dataKey={key2026} name="2026" fill={COLOR_2026} radius={[4, 4, 0, 0]}
           onClick={onBarClick ? () => onBarClick(2026) : undefined} {...barCursor}>
           {data.map((d, i) => (
             <Cell key={i} fill={COLOR_2026} fillOpacity={d.status === 'partial' ? 0.4 : 1} />
           ))}
-          <LabelList dataKey={key2026} position="top" formatter={labelFormatter} style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+          <LabelList dataKey={key2026} position="top" formatter={labelFormatter} style={{ fill: labelColorForBg(COLOR_2026), fontSize: 10, fontWeight: 500 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -1025,11 +1026,11 @@ export default function ComparisonTab() {
                   <DrillCell onClick={() => openDrillDown('employees', 2025, 'quarter', Number(row.quarter.slice(1)), row.quarter)}>{row.empCount2025}</DrillCell>
                   <DrillCell onClick={() => openDrillDown('hours', 2025, 'quarter', Number(row.quarter.slice(1)), row.quarter)}>{fmtHours(row.hours2025)}</DrillCell>
                   <DrillCell onClick={() => openDrillDown('capacity', 2025, 'quarter', Number(row.quarter.slice(1)), row.quarter)}>{fmtHours(row.capacity2025)}</DrillCell>
-                  <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2025 }}>{fmtPct(row.util2025)}%</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2025)}%</td>
                   <DrillCell onClick={() => openDrillDown('employees', 2026, 'quarter', Number(row.quarter.slice(1)), row.quarter)}>{row.empCount2026}</DrillCell>
                   <DrillCell onClick={() => openDrillDown('hours', 2026, 'quarter', Number(row.quarter.slice(1)), row.quarter)}>{fmtHours(row.hours2026)}</DrillCell>
                   <DrillCell onClick={() => openDrillDown('capacity', 2026, 'quarter', Number(row.quarter.slice(1)), row.quarter)}>{fmtHours(row.capacity2026)}</DrillCell>
-                  <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2026 }}>{fmtPct(row.util2026)}%</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2026)}%</td>
                   <td className="py-2 px-3"><DeltaBadge delta={row.growthPct} /></td>
                 </tr>
               ))}
@@ -1096,11 +1097,11 @@ export default function ComparisonTab() {
                     <DrillCell onClick={() => openDrillDown('employees', 2025, 'month', row.month, MONTH_FULL[row.month - 1])}>{row.empCount2025}</DrillCell>
                     <DrillCell onClick={() => openDrillDown('hours', 2025, 'month', row.month, MONTH_FULL[row.month - 1])}>{fmtHours(row.hours2025)}</DrillCell>
                     <DrillCell onClick={() => openDrillDown('capacity', 2025, 'month', row.month, MONTH_FULL[row.month - 1])}>{fmtHours(row.capacity2025)}</DrillCell>
-                    <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2025 }}>{fmtPct(row.util2025)}%</td>
+                    <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2025)}%</td>
                     <DrillCell onClick={() => openDrillDown('employees', 2026, 'month', row.month, MONTH_FULL[row.month - 1])}>{row.empCount2026}</DrillCell>
                     <DrillCell onClick={() => openDrillDown('hours', 2026, 'month', row.month, MONTH_FULL[row.month - 1])}>{fmtHours(row.hours2026)}</DrillCell>
                     <DrillCell onClick={() => openDrillDown('capacity', 2026, 'month', row.month, MONTH_FULL[row.month - 1])}>{fmtHours(row.capacity2026)}</DrillCell>
-                    <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2026 }}>{fmtPct(row.util2026)}%</td>
+                    <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2026)}%</td>
                     <td className="py-2 px-3"><DeltaBadge delta={row.growthPct} /></td>
                   </tr>
                 ))}
@@ -1196,11 +1197,11 @@ export default function ComparisonTab() {
                       <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
                       <Bar yAxisId="util" dataKey="util2025" name="Utilization % 2025" fill={TUC_UTIL_2025} radius={[3, 3, 0, 0]}>
                         <LabelList dataKey="util2025" position="top" formatter={v => `${fmtPct(v)}%`}
-                          style={{ fill: TUC_UTIL_2025, fontSize: 9, fontWeight: 400 }} />
+                          style={{ fill: labelColorForBg(TUC_UTIL_2025), fontSize: 10, fontWeight: 500 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="util2026" name="Utilization % 2026" fill={TUC_UTIL_2026} radius={[3, 3, 0, 0]}>
                         <LabelList dataKey="util2026" position="top" formatter={v => `${fmtPct(v)}%`}
-                          style={{ fill: '#ffffff', fontSize: 9, fontWeight: 400 }} />
+                          style={{ fill: labelColorForBg(TUC_UTIL_2026), fontSize: 10, fontWeight: 500 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="badgeAnchor" name="" fill="transparent" legendType="none" isAnimationActive={false}>
                         <LabelList dataKey="badgeAnchor" content={renderGrowthBadge} />
@@ -1257,11 +1258,11 @@ export default function ComparisonTab() {
                   <DrillCell onClick={() => openTeamEmpDrillDown(row.team, 2025)}>{row.empCount2025}</DrillCell>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.hours2025)}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.capacity2025)}</td>
-                  <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2025 }}>{fmtPct(row.util2025)}%</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2025)}%</td>
                   <DrillCell onClick={() => openTeamEmpDrillDown(row.team, 2026)}>{row.empCount2026}</DrillCell>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.hours2026)}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.capacity2026)}</td>
-                  <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2026 }}>{fmtPct(row.util2026)}%</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2026)}%</td>
                   <td className="py-2 px-3"><DeltaBadge delta={row.delta} /></td>
                 </tr>
               ))}
@@ -1270,11 +1271,11 @@ export default function ComparisonTab() {
                 <DrillCell onClick={() => openTeamEmpDrillDown(grandSummary.team, 2025)}>{grandSummary.empCount2025}</DrillCell>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.hours2025)}</td>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.capacity2025)}</td>
-                <td className="py-2 px-3" style={{ color: COLOR_2025 }}>{fmtPct(grandSummary.util2025)}%</td>
+                <td className="py-2 px-3" style={{ color: '#ffffff', fontWeight: 500 }}>{fmtPct(grandSummary.util2025)}%</td>
                 <DrillCell onClick={() => openTeamEmpDrillDown(grandSummary.team, 2026)}>{grandSummary.empCount2026}</DrillCell>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.hours2026)}</td>
                 <td className="py-2 px-3 dark:text-white/80 text-brand-700">{fmtHours(grandSummary.capacity2026)}</td>
-                <td className="py-2 px-3" style={{ color: COLOR_2026 }}>{fmtPct(grandSummary.util2026)}%</td>
+                <td className="py-2 px-3" style={{ color: '#ffffff', fontWeight: 500 }}>{fmtPct(grandSummary.util2026)}%</td>
                 <td className="py-2 px-3"><DeltaBadge delta={grandSummary.delta} /></td>
               </tr>
             </tbody>
@@ -1345,10 +1346,10 @@ export default function ComparisonTab() {
                   <td className="py-2 px-3 font-medium dark:text-white text-brand-900">{row.name}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.hours2025)}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.capacity2025)}</td>
-                  <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2025 }}>{fmtPct(row.util2025)}%</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2025)}%</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.hours2026)}</td>
                   <td className="py-2 px-3 dark:text-white/70 text-brand-600">{fmtHours(row.capacity2026)}</td>
-                  <td className="py-2 px-3 font-semibold" style={{ color: COLOR_2026 }}>{fmtPct(row.util2026)}%</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: '#ffffff' }}>{fmtPct(row.util2026)}%</td>
                   <td className="py-2 px-3"><DeltaBadge delta={row.delta} /></td>
                 </tr>
               ))}

@@ -4,7 +4,7 @@ import { useFilters } from '../context/FilterContext'
 import {
   filterRows, calcHoursByClient, calcHoursByProject, calcHoursByEmployee, calcPivotTable, round2, roundPct,
 } from '../api/transformData'
-import { sequentialColor } from '../utils/chartColors'
+import { sequentialColor, labelColorForBg } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import Greeting from '../components/common/Greeting'
@@ -18,8 +18,21 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts'
 
-const labelStyle = { fill: 'currentColor', fontSize: 11, fontWeight: 600 }
 const fmtHours = v => Number(v ?? 0).toFixed(2)
+
+// Both Top-20 bar charts below shade each bar with sequentialColor(i, total)
+// — this renders one on-bar label per bar, contrast-matched to that bar's
+// own shade instead of a static currentColor guess.
+function renderSequentialLabel(total) {
+  return function SequentialLabel({ x, y, width, value, index }) {
+    return (
+      <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={500}
+        fill={labelColorForBg(sequentialColor(index, total))}>
+        {Number(value).toLocaleString()}
+      </text>
+    )
+  }
+}
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
@@ -259,7 +272,7 @@ export default function HoursTab() {
                         {byClientTop20Sorted.map((_, i) => (
                           <Cell key={i} fill={sequentialColor(i, byClientTop20Sorted.length)} />
                         ))}
-                        <LabelList dataKey="hours" position="top" formatter={v => v.toLocaleString()} style={labelStyle} />
+                        <LabelList dataKey="hours" content={renderSequentialLabel(byClientTop20Sorted.length)} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -345,7 +358,7 @@ export default function HoursTab() {
                         {byProjectTop20Sorted.map((_, i) => (
                           <Cell key={i} fill={sequentialColor(i, byProjectTop20Sorted.length)} />
                         ))}
-                        <LabelList dataKey="hours" position="top" formatter={v => v.toLocaleString()} style={labelStyle} />
+                        <LabelList dataKey="hours" content={renderSequentialLabel(byProjectTop20Sorted.length)} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>

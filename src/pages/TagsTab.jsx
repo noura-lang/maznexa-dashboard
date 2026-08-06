@@ -6,7 +6,7 @@ import {
   calcTaskCountByEmployeeForTagFiltered, calcHoursByEmployeeForTag,
   getTasksForTag, getTasksForEmployeeAndTag, filterTasksByDate,
 } from '../api/transformData'
-import { CHART_COLORS } from '../utils/chartColors'
+import { CHART_COLORS, labelColorForBg } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
 import MaximizableChartCard from '../components/common/MaximizableChartCard'
@@ -361,9 +361,12 @@ function EmployeeTagBarChart({ title, data, dataKey, seriesName, isHours, onBarC
                     ))}
                     <LabelList
                       dataKey={dataKey}
-                      position="top"
-                      formatter={v => (isHours ? Number(v).toFixed(2) : v)}
-                      style={{ fill: 'currentColor', fontSize: 11, fontWeight: 600 }}
+                      content={({ x, y, width, value, index }) => (
+                        <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={500}
+                          fill={labelColorForBg(CHART_COLORS[index % CHART_COLORS.length])}>
+                          {isHours ? Number(value).toFixed(2) : value}
+                        </text>
+                      )}
                     />
                   </Bar>
                 </BarChart>

@@ -14,7 +14,7 @@ import {
   calcCapacityByEmployeeForWeeklyReport, calcTeamUtilizationSummaryForWeeklyReport,
   calcCapacitySummaryForWeeklyReport, calcGrowthPct,
 } from '../api/transformData'
-import { SEQUENTIAL_STOPS, CHART_COLORS, sequentialColor, DARK_PROFESSIONAL_COLOR, DARK_PROFESSIONAL_BORDER } from '../utils/chartColors'
+import { SEQUENTIAL_STOPS, CHART_COLORS, sequentialColor, DARK_PROFESSIONAL_COLOR, DARK_PROFESSIONAL_BORDER, labelColorForBg, LABEL_ON_LIGHT, LABEL_ON_DARK } from '../utils/chartColors'
 import KPICard from '../components/common/KPICard'
 import KPIRingCard from '../components/common/KPIRingCard'
 import LoadingSpinner from '../components/common/LoadingSpinner'
@@ -83,7 +83,7 @@ const DAY_FULL_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 
 // Fixed tag -> color/text mapping (not rank-based) so the same tag always
 // gets the same color across the pie chart and the per-employee chart.
 const TAG_COLOR_MAP = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, SEQUENTIAL_STOPS[i]]))
-const TAG_TEXT_MAP  = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, i <= 3 ? '#1a0e3d' : '#ffffff']))
+const TAG_TEXT_MAP  = Object.fromEntries(TAG_WHITELIST.map((tag, i) => [tag, i <= 3 ? LABEL_ON_LIGHT : LABEL_ON_DARK]))
 
 // ─── Dark Mode bar "depth" (Weekly Report only) ───────────────────────────
 // Every bar-chart color used on this tab (utilizationColor's 6 stops, the
@@ -155,27 +155,39 @@ function utilCellProps(pct, isDark) {
   }
 }
 
+// Only the Weekly Utilization Trend line (not a bar chart) still uses this —
+// every bar chart's LabelList below has its own contrast-aware renderer.
 const axisLabelStyle = { fill: 'currentColor', fontSize: 11, fontWeight: 600 }
 const fmtHours = v => Number(v ?? 0).toFixed(2)
 const fmtPct   = v => Math.round(Number(v ?? 0)).toString()
 
-// Top 5 / Bottom 5-6 Teams/Employees charts only — smaller, lighter labels
-// than the tab's default axisLabelStyle, plus the leading (index 0 = highest
-// value) bar renders its label in white so it reads clearly against its own
-// white-bordered highlight (see TopBottomLabel below).
-function TopBottomLabel({ x, y, width, value, index }) {
-  return (
-    <text
-      x={x + width / 2}
-      y={y - 4}
-      textAnchor="middle"
-      fontSize={10}
-      fontWeight={500}
-      fill={index === 0 ? '#ffffff' : 'currentColor'}
-    >
-      {`${Math.round(value)}%`}
-    </text>
-  )
+// Every utilization-tier bar chart on this tab (YTD by Month, Top 5/Bottom
+// 5-6 Teams/Employees, Utilization by Team, Utilization by Employee) shares
+// this one label renderer: single number, 10px/500 weight, colored against
+// that exact bar's own tier color (labelColorForBg) instead of a static
+// currentColor guess that goes low-contrast on the lighter tiers.
+function renderUtilLabel(isDark) {
+  return function UtilLabel({ x, y, width, value }) {
+    return (
+      <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={500}
+        fill={labelColorForBg(utilizationColor(value, isDark).bg)}>
+        {`${Math.round(value)}%`}
+      </text>
+    )
+  }
+}
+
+// Same idea for the Overdue Tasks chart, whose bars ramp through
+// sequentialColor(index, total) rather than a utilization tier.
+function renderSequentialLabel(total) {
+  return function SequentialLabel({ x, y, width, value, index }) {
+    return (
+      <text x={x + width / 2} y={y - 4} textAnchor="middle" fontSize={10} fontWeight={500}
+        fill={labelColorForBg(sequentialColor(index, total))}>
+        {value}
+      </text>
+    )
+  }
 }
 
 function UtilBadge({ pct, isDark }) {
@@ -692,18 +704,15 @@ const UTILIZATION_TARGET = 88
 // constant rather than a string Tailwind's build-time scanner can pick up.
 const UTIL_WIDGET_MIN_HEIGHT = 200
 
-// Horizontal progress bar vs. a fixed 88% target. Red/green state (below vs.
-// at-or-above target) drives every accent on the card — the big number, the
-// bar's fill gradient, the target marker line, and the bottom badge — so the
-// whole card reads as one signal at a glance.
+// Horizontal progress bar vs. a fixed 88% target. The big number and bar
+// fill always stay brand purple (#9354FF) — only the target marker (line +
+// "88%" tag) and the bottom badge switch red/green based on whether the
+// current value has crossed the target.
 function UtilizationTargetBar({ current, target = UTILIZATION_TARGET }) {
   const pct = Math.max(0, Math.min(100, Math.round(current)))
   const diff = pct - target
   const isAbove = diff >= 0
   const stateColor = isAbove ? '#5DCAA5' : '#f09595'
-  const fillGradient = isAbove
-    ? 'linear-gradient(90deg, #7F77DD, #5DCAA5)'
-    : 'linear-gradient(90deg, #7F77DD, #9354FF)'
   const targetPos = Math.max(0, Math.min(100, target))
 
   return (
@@ -718,26 +727,36 @@ function UtilizationTargetBar({ current, target = UTILIZATION_TARGET }) {
         Utilization Target
       </p>
 
-      {/* 2. Big current-value number */}
-      <span className="font-bold leading-none" style={{ fontSize: 44, fontWeight: 700, color: stateColor }}>
+      {/* 2. Big current-value number — always brand purple */}
+      <span className="font-bold leading-none" style={{ fontSize: 46, fontWeight: 700, color: '#9354FF' }}>
         {pct}%
       </span>
 
       {/* 3. Horizontal bar with a target marker */}
       <div className="w-full px-1">
-        <div className="relative w-full" style={{ height: 12, borderRadius: 10, background: '#2a1f4a' }}>
-          <div
-            className="absolute inset-y-0 left-0"
-            style={{ width: `${pct}%`, borderRadius: 10, background: fillGradient }}
-          />
-          <div
-            className="absolute inset-y-0"
-            style={{ left: `${targetPos}%`, width: 3, marginLeft: -1.5, borderRadius: 2, background: stateColor }}
-          />
+        <div className="relative w-full" style={{ paddingTop: 14 }}>
+          {/* Target tag, floating directly above the marker line */}
+          <span
+            className="absolute whitespace-nowrap"
+            style={{ left: `${targetPos}%`, top: 0, transform: 'translateX(-50%)', fontSize: 9, fontWeight: 600, color: stateColor }}
+          >
+            {target}%
+          </span>
+          <div className="relative w-full" style={{ height: 12, borderRadius: 10, background: '#2a1f4a' }}>
+            <div
+              className="absolute inset-y-0 left-0"
+              style={{ width: `${pct}%`, borderRadius: 10, background: 'linear-gradient(90deg, #7F77DD, #9354FF)' }}
+            />
+            <div
+              className="absolute inset-y-0"
+              style={{ left: `${targetPos}%`, width: 2.5, marginLeft: -1.25, background: stateColor }}
+            />
+          </div>
+          <div className="flex justify-between text-[10px] mt-1 dark:text-white/40 text-brand-400">
+            <span>0%</span>
+            <span>100%</span>
+          </div>
         </div>
-        <p className="text-xs mt-1.5 text-center font-medium" style={{ color: stateColor }}>
-          ▲ Target {target}%
-        </p>
       </div>
 
       {/* 4. Status badge */}
@@ -745,10 +764,10 @@ function UtilizationTargetBar({ current, target = UTILIZATION_TARGET }) {
         className="text-xs font-semibold px-2.5 py-1 rounded-full"
         style={{
           color: stateColor,
-          background: isAbove ? 'rgba(93,202,165,0.15)' : 'rgba(240,149,149,0.15)',
+          background: isAbove ? '#0a2e1a' : '#3a0f0f',
         }}
       >
-        {isAbove ? `▲ ${Math.abs(diff)}% above target` : `▼ ${Math.abs(diff)}% below target`}
+        {isAbove ? `▲ ${Math.abs(diff)}% above target` : `▼ ${Math.abs(diff)}% remaining to target`}
       </span>
     </div>
   )
@@ -1136,7 +1155,7 @@ export default function WeeklyReport() {
                 {ytdMonthly.map((entry, i) => (
                   <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                 ))}
-                <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -1230,7 +1249,7 @@ export default function WeeklyReport() {
                   {top5.map((entry, i) => (
                     <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
+                  <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1257,7 +1276,7 @@ export default function WeeklyReport() {
                   {bottom6.map((entry, i) => (
                     <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
+                  <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1287,7 +1306,7 @@ export default function WeeklyReport() {
                 {byTeamSorted.map((entry, i) => (
                   <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                 ))}
-                <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -1317,7 +1336,7 @@ export default function WeeklyReport() {
                   {top5Employees.map((entry, i) => (
                     <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
+                  <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1345,7 +1364,7 @@ export default function WeeklyReport() {
                   {bottom5Employees.map((entry, i) => (
                     <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
+                  <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1383,7 +1402,7 @@ export default function WeeklyReport() {
                     {byEmployeeSorted.map((entry, i) => (
                       <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
                     ))}
-                    <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                    <LabelList dataKey="utilPct" content={renderUtilLabel(isDark)} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -1435,7 +1454,7 @@ export default function WeeklyReport() {
                     <td className="py-2 px-3 dark:text-white/70 text-brand-600">{emp.capacity.toLocaleString()}</td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-semibold dark:text-white text-brand-900">
+                        <span className="font-medium dark:text-white text-brand-900">
                           {emp.utilPct}%
                         </span>
                         <UtilBadge pct={emp.utilPct} isDark={isDark} />
@@ -1524,7 +1543,7 @@ export default function WeeklyReport() {
                         onClick={handleTagPerEmployeeBarClick}
                       >
                         <LabelList dataKey={tag} position="center" formatter={labelFmt}
-                          style={{ fill: TAG_TEXT_MAP[tag], fontSize: 10, fontWeight: 700 }} />
+                          style={{ fill: TAG_TEXT_MAP[tag], fontSize: 10, fontWeight: 500 }} />
                       </Bar>
                     )
                   })}
@@ -1593,11 +1612,11 @@ export default function WeeklyReport() {
                       <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
                       <Bar dataKey="complete" name="Complete" stackId="a" fill={barFill(COMPLETE_COLOR, isDark)} radius={[0, 0, 0, 0]}>
                         <LabelList dataKey="complete" position="center"
-                          formatter={v => (v > 0 ? v : '')} style={{ fill: '#ffffff', fontSize: 11, fontWeight: 700 }} />
+                          formatter={v => (v > 0 ? v : '')} style={{ fill: labelColorForBg(COMPLETE_COLOR), fontSize: 11, fontWeight: 500 }} />
                       </Bar>
                       <Bar dataKey="inProgress" name="In Progress" stackId="a" fill={barFill(IN_PROGRESS_COLOR, isDark)} radius={[6, 6, 0, 0]}>
                         <LabelList dataKey="inProgress" position="center"
-                          formatter={v => (v > 0 ? v : '')} style={{ fill: '#1a0e3d', fontSize: 11, fontWeight: 700 }} />
+                          formatter={v => (v > 0 ? v : '')} style={{ fill: labelColorForBg(IN_PROGRESS_COLOR), fontSize: 11, fontWeight: 500 }} />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -1637,7 +1656,7 @@ export default function WeeklyReport() {
                           {overdueSorted.map((_, i) => (
                             <Cell key={i} fill={barFill(sequentialColor(i, overdueSorted.length), isDark)} />
                           ))}
-                          <LabelList dataKey="count" position="top" style={axisLabelStyle} />
+                          <LabelList dataKey="count" content={renderSequentialLabel(overdueSorted.length)} />
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>

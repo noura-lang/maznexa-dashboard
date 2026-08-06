@@ -17,7 +17,7 @@ import { sortChartRows, SORT_MODES } from '../utils/chartSort'
 import { useSortableRows } from '../hooks/useSortableRows'
 import Dropdown from '../components/common/Dropdown'
 import MultiSelect from '../components/common/MultiSelect'
-import { CHART_COLORS } from '../utils/chartColors'
+import { CHART_COLORS, labelColorForBg } from '../utils/chartColors'
 import {
   ComposedChart, BarChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Legend as RechartsLegend, LabelList,
@@ -359,12 +359,12 @@ export default function CostAnalysisTab() {
               <Bar dataKey="actualCost" name="Actual Cost" fill={CHART_COLORS[5]} radius={[4, 4, 0, 0]}
                 onClick={d => openClientDrillDown(d.client)} cursor="pointer">
                 <LabelList dataKey="actualCost" position="top" formatter={fmtSAR} angle={-60}
-                  style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                  style={{ fill: labelColorForBg(CHART_COLORS[5]), fontSize: 10, fontWeight: 500 }} />
               </Bar>
               <Bar dataKey="bufferedCost" name="Buffered Cost" fill={CHART_COLORS[2]} radius={[4, 4, 0, 0]}
                 onClick={d => openClientDrillDown(d.client)} cursor="pointer">
                 <LabelList dataKey="bufferedCost" position="top" formatter={fmtSAR} angle={-60}
-                  style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                  style={{ fill: labelColorForBg(CHART_COLORS[2]), fontSize: 10, fontWeight: 500 }} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -511,11 +511,11 @@ export default function CostAnalysisTab() {
               <RechartsLegend content={<BrandLegend />} />
               <Bar yAxisId="left" dataKey="actualCost" name="Actual Cost" fill={CHART_COLORS[5]} radius={[6, 6, 0, 0]}>
                 <LabelList dataKey="actualCost" position="top" formatter={fmtSAR}
-                  style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                  style={{ fill: labelColorForBg(CHART_COLORS[5]), fontSize: 10, fontWeight: 500 }} />
               </Bar>
               <Bar yAxisId="left" dataKey="bufferedCost" name="Buffered Cost" fill={CHART_COLORS[2]} radius={[6, 6, 0, 0]}>
                 <LabelList dataKey="bufferedCost" position="top" formatter={fmtSAR}
-                  style={{ fill: 'currentColor', fontSize: 10, fontWeight: 600 }} />
+                  style={{ fill: labelColorForBg(CHART_COLORS[2]), fontSize: 10, fontWeight: 500 }} />
               </Bar>
               <Line yAxisId="right" dataKey="growthPct" name="Growth %" stroke={ACCENT_LINE} strokeWidth={2} dot={{ r: 3 }}>
                 <LabelList dataKey="growthPct" position="top" formatter={v => (v === null || v === undefined ? '' : `${v}%`)}
