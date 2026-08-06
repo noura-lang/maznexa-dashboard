@@ -41,8 +41,8 @@ const COLOR_2026 = '#8c8ffe' // secondary blue
 // above the bar against the card background instead.
 const TUC_HOURS_2025 = '#9A5EFF'
 const TUC_HOURS_2026 = '#7A3FE8'
-const TUC_UTIL_2025  = '#9354FF'
-const TUC_UTIL_2026  = '#6B2FD1'
+const TUC_UTIL_2025  = '#B4B2FF'
+const TUC_UTIL_2026  = '#7F77DD'
 const TUC_GROWTH_POS = '#22c55e'
 const TUC_GROWTH_NEG = '#ef4444'
 
@@ -1140,12 +1140,11 @@ export default function ComparisonTab() {
           ⏳ {monthName} 2026 is still in progress — figures below reflect data through {lastDataDate}.
         </p>
       )}
-      {/* Team Utilization Comparison chart — 4 bars per team (Hours 2025,
-          Hours 2026, Utilization 2025, Utilization 2026), brand-purple-only
-          palette, with Growth % as a fixed colored badge above each group
-          (an invisible "anchor" bar pins every badge to the same height,
-          independent of how tall that team's own bars happen to be) instead
-          of a line crossing over the bars. */}
+      {/* Team Utilization Comparison chart — 2 bars per team (Utilization
+          2025, Utilization 2026), with Growth % as a fixed colored badge
+          above each group (an invisible "anchor" bar pins every badge to the
+          same height, independent of how tall that team's own bars happen to
+          be) instead of a line crossing over the bars. */}
       <MaximizableChartCard
         title={`Team Utilization Comparison by Month — ${monthName}`}
         headerExtra={<ChartSortMenu value={teamChartSortMode} onChange={setTeamChartSortMode} />}
@@ -1183,35 +1182,25 @@ export default function ComparisonTab() {
           return (
             <>
               <p className="text-xs font-light dark:text-white/40 text-brand-400 mb-4 text-center">
-                Bars = Hours and Utilization %, 2025 vs 2026. Badge above each group = utilization growth %. Hover any bar for exact figures.
+                Bars = Utilization %, 2025 vs 2026. Badge above each group = utilization growth %. Hover any bar for exact figures.
               </p>
               <div className="overflow-x-auto">
                 <div style={{ minWidth: Math.max(700, chartData.length * 130) }}>
                   <ResponsiveContainer width="100%" height={h}>
                     <ComposedChart data={chartData} margin={{ top: 40, bottom: 70 }} barGap={2} barCategoryGap="22%">
                       <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" height={80} interval={0} />
-                      <YAxis yAxisId="hours" tick={{ fill: 'currentColor', fontSize: 11 }} tickFormatter={v => v.toLocaleString()}
-                        label={{ value: 'Hours', angle: -90, position: 'insideLeft', fill: 'currentColor', fontSize: 11 }} />
-                      <YAxis yAxisId="util" orientation="right" domain={[0, teamUtilAxisMax]} tick={{ fill: 'currentColor', fontSize: 11 }}
+                      <YAxis yAxisId="util" domain={[0, teamUtilAxisMax]} tick={{ fill: 'currentColor', fontSize: 11 }}
                         tickFormatter={v => `${Math.round(v)}%`}
-                        label={{ value: 'Utilization %', angle: 90, position: 'insideRight', fill: 'currentColor', fontSize: 11 }} />
+                        label={{ value: 'Utilization %', angle: -90, position: 'insideLeft', fill: 'currentColor', fontSize: 11 }} />
                       <Tooltip content={<TeamUtilComparisonTooltip />} />
                       <RechartsLegend verticalAlign="top" align="center" wrapperStyle={{ paddingBottom: 12, fontSize: '12px' }} />
-                      <Bar yAxisId="hours" dataKey="hours2025" name="Hours 2025" fill={TUC_HOURS_2025} radius={[3, 3, 0, 0]}>
-                        <LabelList dataKey="hours2025" position="insideTop" angle={-90} formatter={fmtHours}
-                          style={{ fill: '#ffffff', fontSize: 9, fontWeight: 600 }} />
-                      </Bar>
-                      <Bar yAxisId="hours" dataKey="hours2026" name="Hours 2026" fill={TUC_HOURS_2026} radius={[3, 3, 0, 0]}>
-                        <LabelList dataKey="hours2026" position="insideTop" angle={-90} formatter={fmtHours}
-                          style={{ fill: '#ffffff', fontSize: 9, fontWeight: 600 }} />
-                      </Bar>
                       <Bar yAxisId="util" dataKey="util2025" name="Utilization % 2025" fill={TUC_UTIL_2025} radius={[3, 3, 0, 0]}>
                         <LabelList dataKey="util2025" position="top" formatter={v => `${fmtPct(v)}%`}
-                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                          style={{ fill: TUC_UTIL_2025, fontSize: 9, fontWeight: 400 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="util2026" name="Utilization % 2026" fill={TUC_UTIL_2026} radius={[3, 3, 0, 0]}>
                         <LabelList dataKey="util2026" position="top" formatter={v => `${fmtPct(v)}%`}
-                          style={{ fill: 'currentColor', fontSize: 9, fontWeight: 600 }} />
+                          style={{ fill: '#ffffff', fontSize: 9, fontWeight: 400 }} />
                       </Bar>
                       <Bar yAxisId="util" dataKey="badgeAnchor" name="" fill="transparent" legendType="none" isAnimationActive={false}>
                         <LabelList dataKey="badgeAnchor" content={renderGrowthBadge} />

@@ -159,6 +159,25 @@ const axisLabelStyle = { fill: 'currentColor', fontSize: 11, fontWeight: 600 }
 const fmtHours = v => Number(v ?? 0).toFixed(2)
 const fmtPct   = v => Math.round(Number(v ?? 0)).toString()
 
+// Top 5 / Bottom 5-6 Teams/Employees charts only — smaller, lighter labels
+// than the tab's default axisLabelStyle, plus the leading (index 0 = highest
+// value) bar renders its label in white so it reads clearly against its own
+// white-bordered highlight (see TopBottomLabel below).
+function TopBottomLabel({ x, y, width, value, index }) {
+  return (
+    <text
+      x={x + width / 2}
+      y={y - 4}
+      textAnchor="middle"
+      fontSize={10}
+      fontWeight={500}
+      fill={index === 0 ? '#ffffff' : 'currentColor'}
+    >
+      {`${Math.round(value)}%`}
+    </text>
+  )
+}
+
 function UtilBadge({ pct, isDark }) {
   const { bg, label } = utilizationColor(pct, isDark)
   const isProfessional = label === 'Professional'
@@ -673,29 +692,19 @@ const UTILIZATION_TARGET = 88
 // constant rather than a string Tailwind's build-time scanner can pick up.
 const UTIL_WIDGET_MIN_HEIGHT = 200
 
-// Semi-circle progress gauge vs. a fixed 88% target. Arc color turns green
-// once the current period's Overall Utilization reaches/exceeds the target
-// (a clear positive signal), brand purple otherwise.
-function UtilizationTargetGauge({ current, target = UTILIZATION_TARGET }) {
+// Horizontal progress bar vs. a fixed 88% target. Red/green state (below vs.
+// at-or-above target) drives every accent on the card — the big number, the
+// bar's fill gradient, the target marker line, and the bottom badge — so the
+// whole card reads as one signal at a glance.
+function UtilizationTargetBar({ current, target = UTILIZATION_TARGET }) {
   const pct = Math.max(0, Math.min(100, Math.round(current)))
   const diff = pct - target
   const isAbove = diff >= 0
-  const arcColor = isAbove ? '#22c55e' : '#9354ff'
-  const data = [{ v: pct }, { v: Math.max(0, 100 - pct) }]
-  // Wrapper div and ResponsiveContainer must share the same explicit height —
-  // a mismatch here (previously 110px wrapper vs. 190px chart) is what let
-  // the SVG spill past its box and overlap the "Target" text below it.
-  // Sized so title + gauge + target line + remaining line fit UTIL_WIDGET_MIN_HEIGHT
-  // (matching Week-over-Week's card height) without cramming or empty space.
-  const GAUGE_HEIGHT = 90
-  // Fixed pixel radii (not percentages) — percentage radii on a semi-circle
-  // (cy at the very bottom) get sized by Recharts as if fitting a FULL circle
-  // in the box, which can shrink the visible arc unpredictably and put the
-  // hollow center's actual pixel bounds somewhere other than where the "85%"
-  // label was positioned, reading as an overlap. Fixed px values make both
-  // the arc and the label's safe zone deterministic.
-  const OUTER_R = 78
-  const INNER_R = 42
+  const stateColor = isAbove ? '#5DCAA5' : '#f09595'
+  const fillGradient = isAbove
+    ? 'linear-gradient(90deg, #7F77DD, #5DCAA5)'
+    : 'linear-gradient(90deg, #7F77DD, #9354FF)'
+  const targetPos = Math.max(0, Math.min(100, target))
 
   return (
     <div
@@ -709,47 +718,38 @@ function UtilizationTargetGauge({ current, target = UTILIZATION_TARGET }) {
         Utilization Target
       </p>
 
-      {/* 2. Gauge, with its own dedicated space */}
-      <div className="relative w-full" style={{ height: GAUGE_HEIGHT }}>
-        <ResponsiveContainer width="100%" height={GAUGE_HEIGHT}>
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="v"
-              cx="50%"
-              cy="100%"
-              startAngle={180}
-              endAngle={0}
-              innerRadius={INNER_R}
-              outerRadius={OUTER_R}
-              stroke="none"
-              isAnimationActive={false}
-            >
-              <Cell fill={arcColor} />
-              <Cell fill="rgba(140,143,254,0.15)" />
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
-        {/* 3. Current utilization — anchored inside the guaranteed-hollow
-            band (radius < INNER_R, i.e. never reaches the colored arc),
-            centered on the semi-circle's horizontal diameter (cy). */}
-        <div
-          className="absolute inset-x-0 bottom-0 flex items-end justify-center"
-          style={{ height: INNER_R }}
-        >
-          <span className="text-3xl font-bold leading-none" style={{ color: arcColor }}>{pct}%</span>
+      {/* 2. Big current-value number */}
+      <span className="font-bold leading-none" style={{ fontSize: 44, fontWeight: 700, color: stateColor }}>
+        {pct}%
+      </span>
+
+      {/* 3. Horizontal bar with a target marker */}
+      <div className="w-full px-1">
+        <div className="relative w-full" style={{ height: 12, borderRadius: 10, background: '#2a1f4a' }}>
+          <div
+            className="absolute inset-y-0 left-0"
+            style={{ width: `${pct}%`, borderRadius: 10, background: fillGradient }}
+          />
+          <div
+            className="absolute inset-y-0"
+            style={{ left: `${targetPos}%`, width: 3, marginLeft: -1.5, borderRadius: 2, background: stateColor }}
+          />
         </div>
+        <p className="text-xs mt-1.5 text-center font-medium" style={{ color: stateColor }}>
+          ▲ Target {target}%
+        </p>
       </div>
 
-      {/* 4. Target, on its own line */}
-      <p className="text-xs dark:text-white/60 text-brand-600">
-        Target: <span className="font-semibold dark:text-white text-brand-900">{target}%</span>
-      </p>
-
-      {/* 5. Remaining/above target, on its own line */}
-      <p className={`text-xs font-semibold ${isAbove ? 'text-green-400' : 'dark:text-white/60 text-brand-600'}`}>
-        {isAbove ? `+${diff}% above target` : `${Math.abs(diff)}% remaining to reach target`}
-      </p>
+      {/* 4. Status badge */}
+      <span
+        className="text-xs font-semibold px-2.5 py-1 rounded-full"
+        style={{
+          color: stateColor,
+          background: isAbove ? 'rgba(93,202,165,0.15)' : 'rgba(240,149,149,0.15)',
+        }}
+      >
+        {isAbove ? `▲ ${Math.abs(diff)}% above target` : `▼ ${Math.abs(diff)}% below target`}
+      </span>
     </div>
   )
 }
@@ -824,27 +824,18 @@ export default function WeeklyReport() {
   // ─── Chart sort dropdowns — each category-based bar chart (Team/Employee
   // comparisons) gets its own independent "Sort" selector, defaulting to
   // DESC so nothing changes visually until the user picks something else.
-  // For Top 5/Bottom 6/Top 5 Employees/Bottom 5 Employees, sorting only
-  // reorders the already-selected subset for display — it never changes
-  // *which* teams/employees count as "top"/"bottom" (that selection stays
-  // pinned to the real descending order via top5/bottom6/etc. above).
+  // Top 5/Bottom 6/Top 5 Employees/Bottom 5 Employees have no sort dropdown —
+  // their order is permanently fixed to descending value (see top5/bottom6/
+  // top5Employees/bottom5Employees above), so they render directly from those.
   // Chronological charts (YTD by Month, Weekly Trend) intentionally have no
-  // sort dropdown — reordering by value would break their timeline.
-  const [top5SortMode, setTop5SortMode] = useState(SORT_MODES.DESC)
-  const [bottom6SortMode, setBottom6SortMode] = useState(SORT_MODES.DESC)
+  // sort dropdown either — reordering by value would break their timeline.
   const [byTeamSortMode, setByTeamSortMode] = useState(SORT_MODES.DESC)
-  const [top5EmpSortMode, setTop5EmpSortMode] = useState(SORT_MODES.DESC)
-  const [bottom5EmpSortMode, setBottom5EmpSortMode] = useState(SORT_MODES.DESC)
   const [byEmployeeSortMode, setByEmployeeSortMode] = useState(SORT_MODES.DESC)
   const [tagPerEmpSortMode, setTagPerEmpSortMode] = useState(SORT_MODES.DESC)
   const [taskStatusSortMode, setTaskStatusSortMode] = useState(SORT_MODES.DESC)
   const [overdueSortMode, setOverdueSortMode] = useState(SORT_MODES.DESC)
 
-  const top5Sorted    = useMemo(() => sortChartRows(top5, top5SortMode, 'utilPct', 'team'), [top5, top5SortMode])
-  const bottom6Sorted = useMemo(() => sortChartRows(bottom6, bottom6SortMode, 'utilPct', 'team'), [bottom6, bottom6SortMode])
   const byTeamSorted  = useMemo(() => sortChartRows(byTeam, byTeamSortMode, 'utilPct', 'team'), [byTeam, byTeamSortMode])
-  const top5EmpSorted    = useMemo(() => sortChartRows(top5Employees, top5EmpSortMode, 'utilPct', 'name'), [top5Employees, top5EmpSortMode])
-  const bottom5EmpSorted = useMemo(() => sortChartRows(bottom5Employees, bottom5EmpSortMode, 'utilPct', 'name'), [bottom5Employees, bottom5EmpSortMode])
   const byEmployeeSorted = useMemo(() => sortChartRows(byEmployee, byEmployeeSortMode, 'utilPct', 'name'), [byEmployee, byEmployeeSortMode])
   const employeeTableSort = useSortableRows(byEmployee, 'utilPct', 'desc')
   const employeeTableSorted = employeeTableSort.sorted
@@ -1110,8 +1101,8 @@ export default function WeeklyReport() {
         />
       </div>
 
-      {/* Utilization Target gauge — near the YTD/Overall Utilization donuts above */}
-      <UtilizationTargetGauge current={kpis.utilization} />
+      {/* Utilization Target bar — near the YTD/Overall Utilization donuts above */}
+      <UtilizationTargetBar current={kpis.utilization} />
 
       {/* Week-over-Week — last widget before the charts begin, full width */}
       <WeekOverWeekCard
@@ -1221,10 +1212,9 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MaximizableChartCard
           title="Top 5 Teams by Utilization"
-          headerExtra={<ChartSortMenu value={top5SortMode} onChange={setTop5SortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={top5Sorted}
+          exportRows={top5}
           exportColumns={[
             { key: 'team', label: 'Team' },
             { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
@@ -1232,15 +1222,15 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={top5Sorted} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={top5} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
-                  {top5Sorted.map((entry, i) => (
-                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
+                  {top5.map((entry, i) => (
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1249,10 +1239,9 @@ export default function WeeklyReport() {
 
         <MaximizableChartCard
           title="Bottom 6 Teams by Utilization"
-          headerExtra={<ChartSortMenu value={bottom6SortMode} onChange={setBottom6SortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={bottom6Sorted}
+          exportRows={bottom6}
           exportColumns={[
             { key: 'team', label: 'Team' },
             { key: 'utilPct', label: 'Utilization %', format: v => `${Math.round(v)}%` },
@@ -1260,15 +1249,15 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={bottom6Sorted} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={bottom6} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="team" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]} cursor="pointer" onClick={handleTeamBarClick}>
-                  {bottom6Sorted.map((entry, i) => (
-                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
+                  {bottom6.map((entry, i) => (
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1309,10 +1298,9 @@ export default function WeeklyReport() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MaximizableChartCard
           title="Top 5 Employees by Utilization"
-          headerExtra={<ChartSortMenu value={top5EmpSortMode} onChange={setTop5EmpSortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={top5EmpSorted}
+          exportRows={top5Employees}
           exportColumns={[
             { key: 'name', label: 'Employee' },
             { key: 'team', label: 'Team' },
@@ -1321,15 +1309,15 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={top5EmpSorted} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={top5Employees} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
-                  {top5EmpSorted.map((entry, i) => (
-                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
+                  {top5Employees.map((entry, i) => (
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -1338,10 +1326,9 @@ export default function WeeklyReport() {
 
         <MaximizableChartCard
           title="Bottom 5 Employees by Utilization"
-          headerExtra={<ChartSortMenu value={bottom5EmpSortMode} onChange={setBottom5EmpSortMode} />}
           height={280}
           modalHeight={480}
-          exportRows={bottom5EmpSorted}
+          exportRows={bottom5Employees}
           exportColumns={[
             { key: 'name', label: 'Employee' },
             { key: 'team', label: 'Team' },
@@ -1350,15 +1337,15 @@ export default function WeeklyReport() {
         >
           {h => (
             <ResponsiveContainer width="100%" height={h}>
-              <BarChart data={bottom5EmpSorted} margin={{ top: 24, bottom: 40 }}>
+              <BarChart data={bottom5Employees} margin={{ top: 24, bottom: 40 }}>
                 <XAxis dataKey="name" tick={{ fill: 'currentColor', fontSize: 11 }} angle={-35} textAnchor="end" />
                 <YAxis tickFormatter={v => `${Math.round(v)}%`} domain={[0, 110]} tick={{ fill: 'currentColor', fontSize: 11 }} />
                 <Tooltip content={<CustomTooltip isDark={isDark} />} />
                 <Bar dataKey="utilPct" radius={[6, 6, 0, 0]}>
-                  {bottom5EmpSorted.map((entry, i) => (
-                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} />
+                  {bottom5Employees.map((entry, i) => (
+                    <Cell key={i} {...utilCellProps(entry.utilPct, isDark)} {...(i === 0 ? { stroke: '#ffffff', strokeWidth: 1.5 } : {})} />
                   ))}
-                  <LabelList dataKey="utilPct" position="top" formatter={v => `${Math.round(v)}%`} style={axisLabelStyle} />
+                  <LabelList dataKey="utilPct" content={TopBottomLabel} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
